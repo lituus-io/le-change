@@ -1,9 +1,9 @@
-# LeChange
+# le-change
 
 Ultra-fast Git change detection powered by Rust with zero-copy abstractions and parallel processing.
 
-[![CI](https://github.com/lituus-io/lechange/actions/workflows/ci.yml/badge.svg)](https://github.com/lituus-io/lechange/actions/workflows/ci.yml)
-[![Security](https://github.com/lituus-io/lechange/actions/workflows/security.yml/badge.svg)](https://github.com/lituus-io/lechange/actions/workflows/security.yml)
+[![CI](https://github.com/lituus-io/le-change/actions/workflows/ci.yml/badge.svg)](https://github.com/lituus-io/le-change/actions/workflows/ci.yml)
+[![Security](https://github.com/lituus-io/le-change/actions/workflows/security.yml/badge.svg)](https://github.com/lituus-io/le-change/actions/workflows/security.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
@@ -24,23 +24,23 @@ Ultra-fast Git change detection powered by Rust with zero-copy abstractions and 
 
 ### From GitHub Releases (Recommended)
 
-Download pre-built wheels from the [latest release](https://github.com/lituus-io/lechange/releases/latest):
+Download pre-built wheels from the [latest release](https://github.com/lituus-io/le-change/releases/latest):
 
 ```bash
 # Linux
-pip install https://github.com/lituus-io/lechange/releases/download/v0.1.0/lechange-0.1.0-cp38-abi3-linux_x86_64.whl
+pip install https://github.com/lituus-io/le-change/releases/download/v0.1.0/lechange-0.1.0-cp38-abi3-linux_x86_64.whl
 
 # macOS (ARM64)
-pip install https://github.com/lituus-io/lechange/releases/download/v0.1.0/lechange-0.1.0-cp38-abi3-macosx_11_0_arm64.whl
+pip install https://github.com/lituus-io/le-change/releases/download/v0.1.0/lechange-0.1.0-cp38-abi3-macosx_11_0_arm64.whl
 
 # Windows
-pip install https://github.com/lituus-io/lechange/releases/download/v0.1.0/lechange-0.1.0-cp38-abi3-win_amd64.whl
+pip install https://github.com/lituus-io/le-change/releases/download/v0.1.0/lechange-0.1.0-cp38-abi3-win_amd64.whl
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/lituus-io/lechange.git
+git clone https://github.com/lituus-io/le-change.git
 cd lechange
 pip install maturin
 maturin develop --release
@@ -189,7 +189,7 @@ jobs:
 
       - name: Install LeChange
         run: |
-          pip install https://github.com/lituus-io/lechange/releases/download/v0.1.0/lechange-0.1.0-cp38-abi3-linux_x86_64.whl
+          pip install https://github.com/lituus-io/le-change/releases/download/v0.1.0/lechange-0.1.0-cp38-abi3-linux_x86_64.whl
 
       - name: Detect changed Python files
         id: changed-files
@@ -248,7 +248,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install LeChange
-        run: pip install https://github.com/lituus-io/lechange/releases/download/v0.1.0/lechange-0.1.0-cp38-abi3-linux_x86_64.whl
+        run: pip install https://github.com/lituus-io/le-change/releases/download/v0.1.0/lechange-0.1.0-cp38-abi3-linux_x86_64.whl
 
       - name: Detect changes
         id: changes
@@ -540,7 +540,7 @@ struct ChangedFile {
 
 ```bash
 # Clone repository
-git clone https://github.com/lituus-io/lechange.git
+git clone https://github.com/lituus-io/le-change.git
 cd lechange
 
 # Install Rust nightly (required for GATs)
@@ -649,6 +649,6 @@ Copyright (c) 2024-2026 lituus-io
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/lituus-io/lechange/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/lituus-io/lechange/discussions)
+- **Issues**: [GitHub Issues](https://github.com/lituus-io/le-change/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/lituus-io/le-change/discussions)
 - **Email**: <spicyzhug@gmail.com>
