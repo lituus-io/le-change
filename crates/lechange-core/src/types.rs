@@ -47,6 +47,21 @@ impl ChangeType {
         }
     }
 
+    /// Convert to git diff-filter byte character
+    #[inline]
+    pub const fn as_byte(&self) -> u8 {
+        match self {
+            Self::Added => b'A',
+            Self::Copied => b'C',
+            Self::Deleted => b'D',
+            Self::Modified => b'M',
+            Self::Renamed => b'R',
+            Self::TypeChanged => b'T',
+            Self::Unmerged => b'U',
+            Self::Unknown => b'X',
+        }
+    }
+
     /// Get string representation
     #[inline]
     pub const fn as_str(&self) -> &'static str {
@@ -208,6 +223,34 @@ mod tests {
         assert_eq!(ChangeType::Added.as_str(), "added");
         assert_eq!(ChangeType::Modified.as_str(), "modified");
         assert_eq!(ChangeType::Deleted.as_str(), "deleted");
+    }
+
+    #[test]
+    fn test_change_type_as_byte() {
+        assert_eq!(ChangeType::Added.as_byte(), b'A');
+        assert_eq!(ChangeType::Modified.as_byte(), b'M');
+        assert_eq!(ChangeType::Deleted.as_byte(), b'D');
+        assert_eq!(ChangeType::Renamed.as_byte(), b'R');
+    }
+
+    #[test]
+    fn test_change_type_roundtrip() {
+        let types = [
+            ChangeType::Added,
+            ChangeType::Copied,
+            ChangeType::Deleted,
+            ChangeType::Modified,
+            ChangeType::Renamed,
+            ChangeType::TypeChanged,
+            ChangeType::Unmerged,
+            ChangeType::Unknown,
+        ];
+
+        for change_type in &types {
+            let byte = change_type.as_byte();
+            let parsed = ChangeType::from_byte(byte);
+            assert_eq!(parsed, Some(*change_type));
+        }
     }
 
     #[test]
