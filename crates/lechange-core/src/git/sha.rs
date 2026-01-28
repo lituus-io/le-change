@@ -299,7 +299,13 @@ mod tests {
     fn test_merge_base() {
         let (_dir, repo_path) = create_test_repo();
 
-        // Create a branch
+        let repo = git2::Repository::open(&repo_path).unwrap();
+
+        // Get the current branch name instead of assuming "main"
+        let head = repo.head().unwrap();
+        let base_sha = head.target().unwrap().to_string();
+
+        // Create a feature branch
         std::process::Command::new("git")
             .args(["checkout", "-b", "feature"])
             .current_dir(&repo_path)
@@ -319,13 +325,10 @@ mod tests {
             .unwrap();
 
         let resolver = ShaResolver::new(&repo_path);
-        let repo = git2::Repository::open(&repo_path).unwrap();
-
-        let main_sha = repo.revparse_single("main").unwrap().id().to_string();
         let feature_sha = repo.revparse_single("feature").unwrap().id().to_string();
 
-        let merge_base = resolver.merge_base(&main_sha, &feature_sha).unwrap();
+        let merge_base = resolver.merge_base(&base_sha, &feature_sha).unwrap();
         assert_eq!(merge_base.len(), 40);
-        assert_eq!(merge_base, main_sha); // merge base should be main commit
+        assert_eq!(merge_base, base_sha); // merge base should be the initial commit
     }
 }
