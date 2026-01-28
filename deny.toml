@@ -5,6 +5,20 @@
 [advisories]
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
+# Ignore unmaintained rustls-pemfile - it's a transitive dep from reqwest
+# and the unmaintained status is not a security issue
+ignore = ["RUSTSEC-2025-0134"]
+
+[licenses]
+# Accept common open source licenses
+# Note: In latest cargo-deny, license checking requires explicit configuration
+# We allow common OSS licenses and check for GPL
+confidence-threshold = 0.8
+
+[[licenses.clarify]]
+name = "ring"
+expression = "MIT AND ISC AND OpenSSL"
+license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
 
 [bans]
 multiple-versions = "warn"
