@@ -16,7 +16,7 @@ crate-type = ["cdylib"]
 lechange-core = { path = "../lechange-core" }
 
 # PyO3 for Python bindings
-pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
+pyo3 = { version = "0.27", features = ["extension-module", "abi3-py38"] }
 pyo3-async-runtimes = { version = "0.22", features = ["tokio-runtime"] }
 
 # Async runtime
