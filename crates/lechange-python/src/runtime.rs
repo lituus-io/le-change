@@ -37,8 +37,8 @@ where
     let runtime = get_runtime()?;
 
     // Release GIL during blocking operation to allow other Python threads
-    Python::with_gil(|py| {
-        py.allow_threads(|| {
+    Python::attach(|py| {
+        py.detach(|| {
             runtime.block_on(future).map_err(|e| {
                 PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
                     "Async operation failed: {}",

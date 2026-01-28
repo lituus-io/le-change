@@ -25,47 +25,47 @@ impl PyChangedFiles {
     // File lists
     #[getter]
     fn added_files<'py>(&self, py: Python<'py>) -> Bound<'py, PyList> {
-        PyList::new_bound(py, &self.added_files)
+        PyList::new(py, &self.added_files).unwrap()
     }
 
     #[getter]
     fn copied_files<'py>(&self, py: Python<'py>) -> Bound<'py, PyList> {
-        PyList::new_bound(py, &self.copied_files)
+        PyList::new(py, &self.copied_files).unwrap()
     }
 
     #[getter]
     fn deleted_files<'py>(&self, py: Python<'py>) -> Bound<'py, PyList> {
-        PyList::new_bound(py, &self.deleted_files)
+        PyList::new(py, &self.deleted_files).unwrap()
     }
 
     #[getter]
     fn modified_files<'py>(&self, py: Python<'py>) -> Bound<'py, PyList> {
-        PyList::new_bound(py, &self.modified_files)
+        PyList::new(py, &self.modified_files).unwrap()
     }
 
     #[getter]
     fn renamed_files<'py>(&self, py: Python<'py>) -> Bound<'py, PyList> {
-        PyList::new_bound(py, &self.renamed_files)
+        PyList::new(py, &self.renamed_files).unwrap()
     }
 
     #[getter]
     fn type_changed_files<'py>(&self, py: Python<'py>) -> Bound<'py, PyList> {
-        PyList::new_bound(py, &self.type_changed_files)
+        PyList::new(py, &self.type_changed_files).unwrap()
     }
 
     #[getter]
     fn unmerged_files<'py>(&self, py: Python<'py>) -> Bound<'py, PyList> {
-        PyList::new_bound(py, &self.unmerged_files)
+        PyList::new(py, &self.unmerged_files).unwrap()
     }
 
     #[getter]
     fn unknown_files<'py>(&self, py: Python<'py>) -> Bound<'py, PyList> {
-        PyList::new_bound(py, &self.unknown_files)
+        PyList::new(py, &self.unknown_files).unwrap()
     }
 
     #[getter]
     fn all_changed_files<'py>(&self, py: Python<'py>) -> Bound<'py, PyList> {
-        PyList::new_bound(py, &self.all_changed_files)
+        PyList::new(py, &self.all_changed_files).unwrap()
     }
 
     // Counts
