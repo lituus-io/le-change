@@ -15,7 +15,7 @@ path = "src/lib.rs"
 
 [dependencies]
 # Git operations - zero-copy bindings
-git2 = { version = "0.18", default-features = false }
+git2 = { version = "0.20", default-features = false }
 
 # Pattern matching - compiled glob patterns
 globset = "0.4"
