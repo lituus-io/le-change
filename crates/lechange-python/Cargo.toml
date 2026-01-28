@@ -8,7 +8,7 @@ license = "MIT"
 repository = "https://github.com/lituus-io/lechange"
 
 [lib]
-name = "lechange"
+name = "_lechange"
 crate-type = ["cdylib"]
 
 [dependencies]
