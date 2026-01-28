@@ -6,15 +6,6 @@
 db-path = "~/.cargo/advisory-db"
 # The url(s) of the advisory databases to use
 db-urls = ["https://github.com/rustsec/advisory-db"]
-# The lint level for security vulnerabilities
-db-path = "~/.cargo/advisory-db"
-db-urls = ["https://github.com/rustsec/advisory-db"]
-
-# Severity thresholds - what level of vulnerabilities to report
-[advisories.severity-threshold]
-high = "deny"
-medium = "warn"
-low = "warn"
 
 # A list of advisory IDs to ignore
 ignore = [
