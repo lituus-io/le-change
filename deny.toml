@@ -6,15 +6,10 @@
 db-path = "~/.cargo/advisory-db"
 # The url(s) of the advisory databases to use
 db-urls = ["https://github.com/rustsec/advisory-db"]
-
 # A list of advisory IDs to ignore
-ignore = [
-    #"RUSTSEC-2025-0134",  # rustls-pemfile unmaintained - transitive dep
-]
+ignore = []
 
 [licenses]
-# The lint level for crates which do not have a detectable license
-unlicensed = "deny"
 # List of explicitly allowed licenses
 allow = [
     "MIT",
@@ -32,14 +27,6 @@ deny = [
     "GPL-3.0",
     "AGPL-3.0",
 ]
-# Lint level for licenses considered copyleft
-copyleft = "deny"
-# Blanket approval or denial for OSI-approved or FSF Free/Libre licenses
-allow-osi-fsf-free = "both"
-# Lint level used when no other predicates are matched
-default = "deny"
-# The confidence threshold for detecting a license from license text
-confidence-threshold = 0.8
 
 [licenses.private]
 # If true, ignores workspace crates that aren't published
@@ -50,14 +37,10 @@ ignore = false
 multiple-versions = "warn"
 # Lint level for when a crate version requirement is `*`
 wildcards = "allow"
-# The graph highlighting used when creating dotgraphs for crates
-highlight = "all"
-# List of crates that are allowed (can be versions or wildcards)
+# List of crates that are allowed
 allow = []
 # List of crates to deny
-deny = [
-    # Example: { name = "openssl", wrappers = ["tokio-openssl"] },
-]
+deny = []
 # Certain crates/versions that will be skipped when doing duplicate detection
 skip = []
 # Similarly named crates that are distinct
