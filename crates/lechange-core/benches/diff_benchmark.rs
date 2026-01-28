@@ -64,17 +64,17 @@ fn bench_diff_line_types(c: &mut Criterion) {
     let mut group = c.benchmark_group("diff_line_types");
     let interner = StringInterner::new();
 
-    let test_cases = vec![
-        ("added", b"A\tsrc/main.rs\n"),
-        ("modified", b"M\tsrc/lib.rs\n"),
-        ("deleted", b"D\tsrc/old.rs\n"),
-        ("renamed", b"R100\told/path.rs\tnew/path.rs\n"),
-        ("copied", b"C100\tsrc/original.rs\tsrc/copy.rs\n"),
-        ("type_changed", b"T\tsrc/file.rs\n"),
+    let test_cases: Vec<(&str, &[u8])> = vec![
+        ("added", b"A\tsrc/main.rs\n" as &[u8]),
+        ("modified", b"M\tsrc/lib.rs\n" as &[u8]),
+        ("deleted", b"D\tsrc/old.rs\n" as &[u8]),
+        ("renamed", b"R100\told/path.rs\tnew/path.rs\n" as &[u8]),
+        ("copied", b"C100\tsrc/original.rs\tsrc/copy.rs\n" as &[u8]),
+        ("type_changed", b"T\tsrc/file.rs\n" as &[u8]),
     ];
 
     for (name, line) in test_cases {
-        group.bench_with_input(BenchmarkId::from_parameter(name), &line, |b, &line| {
+        group.bench_with_input(BenchmarkId::from_parameter(name), &line, |b, line| {
             let parser = DiffParser::new(&interner);
             b.iter(|| {
                 let _ = parser.parse_diff_line(black_box(line));

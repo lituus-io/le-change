@@ -56,7 +56,7 @@ fn bench_full_pipeline(c: &mut Criterion) {
                 b.iter(|| {
                     // Simulate full processing pipeline
                     let patterns = vec!["**/*.rs", "**/*.toml"];
-                    let pattern_refs: Vec<&str> = patterns.iter().map(|s| s.as_str()).collect();
+                    let pattern_refs: Vec<&str> = patterns.iter().map(|s| s.as_ref()).collect();
                     let matcher = PatternMatcher::new(&pattern_refs, &[], false).unwrap();
 
                     // Filter by patterns
@@ -243,7 +243,7 @@ fn bench_parallel_pattern_filtering(c: &mut Criterion) {
     let mut group = c.benchmark_group("parallel_pattern_filtering");
 
     let patterns = vec!["**/*.rs", "**/*.toml", "**/*.md"];
-    let pattern_refs: Vec<&str> = patterns.iter().map(|s| s.as_str()).collect();
+    let pattern_refs: Vec<&str> = patterns.iter().map(|s| s.as_ref()).collect();
     let matcher = PatternMatcher::new(&pattern_refs, &[], false).unwrap();
 
     for size in [100, 1000, 10000] {

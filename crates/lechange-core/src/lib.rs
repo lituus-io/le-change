@@ -105,8 +105,6 @@ pub fn detect_changes_sync(config: InputConfig<'_>) -> Result<DiffResult> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_library_version() {
         // Smoke test to ensure library compiles

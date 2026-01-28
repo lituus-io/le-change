@@ -16,6 +16,7 @@ pub struct PyChangeDetector {
 #[pymethods]
 impl PyChangeDetector {
     #[new]
+    #[pyo3(signature = (repo_path=None))]
     fn new(repo_path: Option<&str>) -> PyResult<Self> {
         let path = repo_path
             .map(PathBuf::from)

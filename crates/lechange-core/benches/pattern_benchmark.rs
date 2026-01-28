@@ -48,7 +48,7 @@ fn bench_pattern_compilation(c: &mut Criterion) {
             BenchmarkId::from_parameter(name),
             &patterns,
             |b, patterns| {
-                let pattern_refs: Vec<&str> = patterns.iter().map(|s| s.as_str()).collect();
+                let pattern_refs: Vec<&str> = patterns.iter().map(|s| s.as_ref()).collect();
                 b.iter(|| PatternMatcher::new(black_box(&pattern_refs), &[], false));
             },
         );
@@ -61,7 +61,7 @@ fn bench_single_path_matching(c: &mut Criterion) {
     let mut group = c.benchmark_group("single_path_matching");
 
     let patterns = vec!["**/*.rs", "**/*.toml", "**/*.md"];
-    let pattern_refs: Vec<&str> = patterns.iter().map(|s| s.as_str()).collect();
+    let pattern_refs: Vec<&str> = patterns.iter().map(|s| s.as_ref()).collect();
     let matcher = PatternMatcher::new(&pattern_refs, &[], false).unwrap();
 
     let test_paths = vec![
@@ -85,7 +85,7 @@ fn bench_bulk_filtering(c: &mut Criterion) {
     let mut group = c.benchmark_group("bulk_filtering");
 
     let patterns = vec!["**/*.rs", "**/*.toml"];
-    let pattern_refs: Vec<&str> = patterns.iter().map(|s| s.as_str()).collect();
+    let pattern_refs: Vec<&str> = patterns.iter().map(|s| s.as_ref()).collect();
     let matcher = PatternMatcher::new(&pattern_refs, &[], false).unwrap();
 
     for count in [10, 100, 1000, 10000] {
@@ -116,7 +116,7 @@ fn bench_sequential_vs_parallel(c: &mut Criterion) {
     let mut group = c.benchmark_group("sequential_vs_parallel");
 
     let patterns = vec!["**/*.rs"];
-    let pattern_refs: Vec<&str> = patterns.iter().map(|s| s.as_str()).collect();
+    let pattern_refs: Vec<&str> = patterns.iter().map(|s| s.as_ref()).collect();
     let matcher = PatternMatcher::new(&pattern_refs, &[], false).unwrap();
 
     for count in [100, 1000, 10000] {
@@ -167,8 +167,8 @@ fn bench_negation_patterns(c: &mut Criterion) {
     let include_patterns = vec!["**/*"];
     let exclude_patterns = vec!["**/node_modules/**", "**/target/**", "**/.git/**"];
 
-    let include_refs: Vec<&str> = include_patterns.iter().map(|s| s.as_str()).collect();
-    let exclude_refs: Vec<&str> = exclude_patterns.iter().map(|s| s.as_str()).collect();
+    let include_refs: Vec<&str> = include_patterns.iter().map(|s| s.as_ref()).collect();
+    let exclude_refs: Vec<&str> = exclude_patterns.iter().map(|s| s.as_ref()).collect();
 
     let matcher = PatternMatcher::new(&include_refs, &exclude_refs, false).unwrap();
 

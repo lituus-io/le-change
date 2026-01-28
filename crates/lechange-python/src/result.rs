@@ -17,7 +17,7 @@ pub struct PyChangedFiles {
     unmerged_files: Vec<String>,
     unknown_files: Vec<String>,
     all_changed_files: Vec<String>,
-    json: bool,
+    _json: bool,
 }
 
 #[pymethods]
@@ -217,7 +217,7 @@ impl PyChangedFiles {
             unmerged_files,
             unknown_files,
             all_changed_files,
-            json,
+            _json: json,
         }
     }
 }
