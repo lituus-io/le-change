@@ -1,0 +1,164 @@
+name: Benchmark
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  deployments: write
+
+jobs:
+  benchmark:
+    name: Run Benchmarks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-benchmark-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run benchmarks
+        run: |
+          cargo bench --bench diff_benchmark -- --save-baseline pr --output-format bencher | tee diff_output.txt
+          cargo bench --bench pattern_benchmark -- --save-baseline pr --output-format bencher | tee pattern_output.txt
+          cargo bench --bench interner_benchmark -- --save-baseline pr --output-format bencher | tee interner_output.txt
+          cargo bench --bench integration_benchmark -- --save-baseline pr --output-format bencher | tee integration_output.txt
+
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Rust Benchmark
+          tool: 'cargo'
+          output-file-path: diff_output.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          alert-threshold: '150%'
+          comment-on-alert: true
+          fail-on-alert: false
+          alert-comment-cc-users: '@maintainers'
+
+  compare:
+    name: Compare with Main
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Run PR benchmarks
+        run: |
+          cargo bench --bench diff_benchmark -- --save-baseline pr
+          cargo bench --bench pattern_benchmark -- --save-baseline pr
+          cargo bench --bench interner_benchmark -- --save-baseline pr
+          cargo bench --bench integration_benchmark -- --save-baseline pr
+
+      - name: Checkout main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Run main benchmarks
+        run: |
+          cargo bench --bench diff_benchmark -- --save-baseline main
+          cargo bench --bench pattern_benchmark -- --save-baseline main
+          cargo bench --bench interner_benchmark -- --save-baseline main
+          cargo bench --bench integration_benchmark -- --save-baseline main
+
+      - name: Install critcmp
+        run: cargo install critcmp
+
+      - name: Compare benchmarks
+        run: |
+          echo "## Benchmark Comparison" > comparison.md
+          echo "" >> comparison.md
+          echo "### Diff Parsing" >> comparison.md
+          critcmp main pr --group "diff_parsing" >> comparison.md || true
+          echo "" >> comparison.md
+          echo "### Pattern Matching" >> comparison.md
+          critcmp main pr --group "pattern_matching" >> comparison.md || true
+          echo "" >> comparison.md
+          echo "### String Interning" >> comparison.md
+          critcmp main pr --group "interner" >> comparison.md || true
+          echo "" >> comparison.md
+          echo "### Integration Pipeline" >> comparison.md
+          critcmp main pr --group "integration" >> comparison.md || true
+
+      - name: Comment PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const comparison = fs.readFileSync('comparison.md', 'utf8');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comparison
+            });
+
+  performance-regression:
+    name: Performance Regression Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Run benchmarks
+        run: cargo bench --bench integration_benchmark -- --output-format bencher | tee output.txt
+
+      - name: Check for performance regression
+        run: |
+          # Extract timing for 10k file diff parsing
+          DIFF_TIME=$(grep "diff_parsing/10000" output.txt | awk '{print $3}')
+
+          # Check if it exceeds 100ms (100,000,000 ns)
+          if [ "$DIFF_TIME" -gt 100000000 ]; then
+            echo "❌ Performance regression detected: 10k file diff took ${DIFF_TIME}ns (>100ms)"
+            exit 1
+          else
+            echo "✅ Performance target met: 10k file diff took ${DIFF_TIME}ns (<100ms)"
+          fi

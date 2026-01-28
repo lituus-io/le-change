@@ -1,0 +1,33 @@
+[package]
+name = "lechange-fuzz"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+lechange-core = { path = "../lechange-core" }
+libfuzzer-sys = "0.4"
+
+[[bin]]
+name = "diff_parser"
+path = "fuzz_targets/diff_parser.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "pattern_matcher"
+path = "fuzz_targets/pattern_matcher.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "config_parser"
+path = "fuzz_targets/config_parser.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "file_path_handler"
+path = "fuzz_targets/file_path_handler.rs"
+test = false
+doc = false

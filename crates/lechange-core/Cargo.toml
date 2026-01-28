@@ -1,0 +1,69 @@
+[package]
+name = "lechange-core"
+version = "0.1.0"
+edition = "2021"
+authors = ["terekete <spicyzhug@gmail.com>"]
+description = "Ultra-fast Git change detection library with zero-cost abstractions"
+license = "MIT"
+repository = "https://github.com/lituus-io/lechange"
+keywords = ["git", "diff", "performance", "zero-copy"]
+categories = ["development-tools", "filesystem"]
+
+[lib]
+name = "lechange_core"
+path = "src/lib.rs"
+
+[dependencies]
+# Git operations - zero-copy bindings
+git2 = { version = "0.18", default-features = false }
+
+# Pattern matching - compiled glob patterns
+globset = "0.4"
+
+# Parallelism
+rayon = "1.8"
+
+# Async runtime
+tokio = { version = "1.35", features = ["rt-multi-thread", "macros", "fs", "process"] }
+
+# HTTP client for GitHub API
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
+
+# Fast string operations
+memchr = "2.7"
+
+# Thread-safe locks (faster than std)
+parking_lot = "0.12"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+# LRU cache for symlink detection
+lru = "0.12"
+
+# Memory mapping for large files
+memmap2 = "0.9"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+[dev-dependencies]
+# Testing
+tokio = { version = "1.35", features = ["full", "test-util"] }
+tempfile = "3.8"
+
+# Benchmarking
+criterion = { version = "0.5", features = ["html_reports"] }
+
+# Property-based testing
+proptest = "1.4"
+
+# Test utilities
+assert_matches = "1.5"
+
+[features]
+default = ["git2/vendored-libgit2"]
+vendored = ["git2/vendored-libgit2"]
