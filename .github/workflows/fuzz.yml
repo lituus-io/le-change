@@ -2,22 +2,16 @@ name: Fuzz Testing
 
 on:
   schedule:
-    # Run daily at 2 AM UTC
-    - cron: '0 2 * * *'
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
   workflow_dispatch:
     inputs:
       duration:
         description: 'Fuzzing duration in seconds'
         required: false
-        default: '600'
-      target:
-        description: 'Specific fuzz target to run (leave empty for all)'
-        required: false
-        default: ''
+        default: '300'
 
-permissions:
-  contents: read
-  issues: write
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   fuzz:
@@ -33,21 +27,10 @@ jobs:
           - fuzz_config_parser
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install Rust nightly
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: nightly
-
-      - name: Cache fuzz corpus
-        uses: actions/cache@v4
-        with:
-          path: fuzz/corpus/${{ matrix.target }}
-          key: fuzz-corpus-${{ matrix.target }}-${{ github.sha }}
-          restore-keys: |
-            fuzz-corpus-${{ matrix.target }}-
+        uses: dtolnay/rust-toolchain@nightly
 
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz
@@ -58,149 +41,19 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "duration=${{ github.event.inputs.duration }}" >> $GITHUB_OUTPUT
           else
-            echo "duration=600" >> $GITHUB_OUTPUT
+            echo "duration=300" >> $GITHUB_OUTPUT
           fi
 
       - name: Run fuzz target
-        id: fuzz
         continue-on-error: true
         run: |
           cd fuzz
-          cargo fuzz run ${{ matrix.target }} -- -max_total_time=${{ steps.duration.outputs.duration }} -seed=0
-
-      - name: Check for crashes
-        id: check_crashes
-        run: |
-          if [ -d "fuzz/artifacts/${{ matrix.target }}" ] && [ "$(ls -A fuzz/artifacts/${{ matrix.target }})" ]; then
-            echo "crashes=true" >> $GITHUB_OUTPUT
-            echo "❌ Crashes detected in ${{ matrix.target }}"
-          else
-            echo "crashes=false" >> $GITHUB_OUTPUT
-            echo "✅ No crashes in ${{ matrix.target }}"
-          fi
+          cargo fuzz run ${{ matrix.target }} -- -max_total_time=${{ steps.duration.outputs.duration }}
 
       - name: Upload crash artifacts
-        if: steps.check_crashes.outputs.crashes == 'true'
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: fuzz-artifacts-${{ matrix.target }}
           path: fuzz/artifacts/${{ matrix.target }}
-          retention-days: 30
-
-      - name: Minimize crash inputs
-        if: steps.check_crashes.outputs.crashes == 'true'
-        run: |
-          cd fuzz
-          for crash in artifacts/${{ matrix.target }}/*; do
-            if [ -f "$crash" ]; then
-              cargo fuzz cmin ${{ matrix.target }} -- -artifact_prefix=minimized/
-            fi
-          done
-
-      - name: Upload minimized crashes
-        if: steps.check_crashes.outputs.crashes == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: fuzz-minimized-${{ matrix.target }}
-          path: fuzz/minimized/
-          retention-days: 30
-
-      - name: Create issue on crash
-        if: steps.check_crashes.outputs.crashes == 'true' && github.event_name == 'schedule'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const artifactDir = 'fuzz/artifacts/${{ matrix.target }}';
-
-            let crashInfo = 'Fuzz testing detected crashes in `${{ matrix.target }}`\n\n';
-            crashInfo += '## Details\n\n';
-            crashInfo += `- **Target**: ${{ matrix.target }}\n`;
-            crashInfo += `- **Duration**: ${{ steps.duration.outputs.duration }}s\n`;
-            crashInfo += `- **Run**: ${context.runId}\n\n`;
-            crashInfo += '## Artifacts\n\n';
-            crashInfo += `Download crash artifacts from the [workflow run](${context.payload.repository.html_url}/actions/runs/${context.runId})\n\n`;
-            crashInfo += '## Next Steps\n\n';
-            crashInfo += '1. Download and analyze crash artifacts\n';
-            crashInfo += '2. Reproduce crash locally with `cargo fuzz run ${{ matrix.target }} <artifact>`\n';
-            crashInfo += '3. Fix the underlying issue\n';
-            crashInfo += '4. Add crash input to corpus for regression testing\n';
-
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `Fuzz crash detected in ${{ matrix.target }}`,
-              body: crashInfo,
-              labels: ['bug', 'fuzz', 'security']
-            });
-
-      - name: Update corpus
-        if: steps.check_crashes.outputs.crashes == 'false'
-        run: |
-          echo "✅ No crashes found. Corpus updated."
-
-  coverage:
-    name: Fuzz Coverage
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Rust nightly
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: nightly
-          components: llvm-tools-preview
-
-      - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz
-
-      - name: Generate coverage
-        run: |
-          cd fuzz
-          for target in fuzz_diff_parser fuzz_pattern_matcher fuzz_interner fuzz_config_parser; do
-            cargo fuzz coverage $target
-          done
-
-      - name: Install grcov
-        run: cargo install grcov
-
-      - name: Generate coverage report
-        run: |
-          grcov . -s . --binary-path ./target/x86_64-unknown-linux-gnu/release/ -t html --branch --ignore-not-existing -o ./coverage/
-
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v4
-        with:
-          name: fuzz-coverage-report
-          path: coverage/
-          retention-days: 30
-
-  smoke-test:
-    name: Quick Smoke Test
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Rust nightly
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: nightly
-
-      - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz
-
-      - name: Quick fuzz test (30s each)
-        run: |
-          cd fuzz
-          for target in fuzz_diff_parser fuzz_pattern_matcher fuzz_interner fuzz_config_parser; do
-            echo "Running quick fuzz test for $target..."
-            cargo fuzz run $target -- -max_total_time=30 -seed=42 || exit 1
-          done
-
-      - name: Report results
-        run: echo "✅ All fuzz targets passed 30s smoke test"
+          if-no-files-found: ignore

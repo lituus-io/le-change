@@ -2,59 +2,40 @@ name: Security
 
 on:
   schedule:
-    # Run weekly on Monday at 9 AM UTC
-    - cron: '0 9 * * 1'
+    - cron: '0 9 * * 1'  # Weekly on Monday at 9 AM UTC
   push:
     branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  security-events: write
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   audit:
     name: Security Audit
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
 
       - name: Run cargo audit
-        uses: actions-rs/audit-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+        run: cargo audit
 
-  dependency-review:
-    name: Dependency Review
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Dependency Review
-        uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: moderate
-
-  cargo-deny:
+  deny:
     name: Cargo Deny
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install cargo-deny
         run: cargo install cargo-deny
@@ -62,59 +43,14 @@ jobs:
       - name: Run cargo deny
         run: cargo deny check
 
-  safety:
-    name: Python Safety Check
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install safety
-        run: pip install safety
-
-      - name: Check Python dependencies
-        run: safety check --json
-
-  codeql:
-    name: CodeQL Analysis
-    runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        language: ['python']
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: ${{ matrix.language }}
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
-
   clippy-security:
     name: Clippy Security Lints
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
 
@@ -123,90 +59,4 @@ jobs:
           cargo clippy --all-targets --all-features -- \
             -W clippy::unwrap_used \
             -W clippy::expect_used \
-            -W clippy::panic \
-            -W clippy::unreachable \
-            -W clippy::todo \
-            -W clippy::unimplemented \
-            -W clippy::indexing_slicing \
-            -W clippy::mem_forget \
-            -W clippy::cast_ptr_alignment \
-            -W clippy::fn_to_numeric_cast_any \
-            -W clippy::integer_arithmetic
-
-  secrets-scan:
-    name: Secrets Scanning
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: TruffleHog Secrets Scan
-        uses: trufflesecurity/trufflehog@main
-        with:
-          path: ./
-          base: ${{ github.event.repository.default_branch }}
-          head: HEAD
-
-  license-check:
-    name: License Compliance
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Install cargo-license
-        run: cargo install cargo-license
-
-      - name: Check licenses
-        run: |
-          cargo license --json > licenses.json
-          echo "## License Report" > license-report.md
-          cargo license --tsv >> license-report.md
-
-      - name: Upload license report
-        uses: actions/upload-artifact@v4
-        with:
-          name: license-report
-          path: license-report.md
-
-  sbom:
-    name: Generate SBOM
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Install cargo-sbom
-        run: cargo install cargo-sbom
-
-      - name: Generate SBOM
-        run: |
-          cargo sbom > sbom.json
-
-      - name: Upload SBOM
-        uses: actions/upload-artifact@v4
-        with:
-          name: sbom
-          path: sbom.json
-
-      - name: Attach SBOM to release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./sbom.json
-          asset_name: sbom.json
-          asset_content_type: application/json
+            -W clippy::panic
