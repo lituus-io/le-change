@@ -20,7 +20,7 @@ pub struct GitRepository {
     path: PathBuf,
     // Cache the repository in a Mutex for sync operations
     // Note: This is only used for sync operations, async uses spawn_blocking
-    cached_repo: Arc<Mutex<Option<git2::Repository>>>,
+    _cached_repo: Arc<Mutex<Option<git2::Repository>>>,
 }
 
 impl GitRepository {
@@ -32,7 +32,7 @@ impl GitRepository {
 
         Ok(Self {
             path,
-            cached_repo: Arc::new(Mutex::new(Some(repo))),
+            _cached_repo: Arc::new(Mutex::new(Some(repo))),
         })
     }
 
@@ -45,7 +45,7 @@ impl GitRepository {
 
         Ok(Self {
             path: git_path,
-            cached_repo: Arc::new(Mutex::new(Some(repo))),
+            _cached_repo: Arc::new(Mutex::new(Some(repo))),
         })
     }
 
@@ -252,7 +252,6 @@ impl AsyncGitOps for GitRepository {
     ) -> Self::DiffFuture<'a> {
         async move {
             // Clone necessary data for move into spawn_blocking
-            let path = self.path.clone();
             let base_sha = base_sha.to_string();
             let head_sha = head_sha.to_string();
             let diff_filter = diff_filter.to_string();

@@ -87,16 +87,23 @@ impl From<serde_json::Error> for Error {
     }
 }
 
+/// Error category for pattern matching
 #[derive(Debug)]
 pub enum ErrorKind {
+    /// Git operation error
     Git(String),
+    /// Invalid file path error
     InvalidPath(String),
+    /// Configuration error
     Config(String),
+    /// I/O operation error
     Io(std::io::Error),
+    /// Runtime error
     Runtime(String),
 }
 
 impl Error {
+    /// Get the error kind for pattern matching
     pub fn kind(&self) -> ErrorKind {
         match self {
             Error::Git(msg) => ErrorKind::Git(msg.clone()),

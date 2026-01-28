@@ -31,7 +31,7 @@ impl PathUtil {
     /// Split path by any separator (zero-copy iterator)
     #[inline]
     pub fn components(path: &str) -> impl Iterator<Item = &str> {
-        path.split(|c| c == '/' || c == '\\')
+        path.split(['/', '\\'])
             .filter(|s| !s.is_empty())
     }
 }

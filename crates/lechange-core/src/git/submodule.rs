@@ -1,6 +1,6 @@
 //! Submodule handling with recursive diff support
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::interner::StringInterner;
 use crate::types::{ChangeType, ChangedFile, DiffResult};
 use std::path::{Path, PathBuf};
@@ -167,11 +167,7 @@ impl SubmoduleProcessor {
         current_depth: u8,
     ) -> Result<DiffResult> {
         // Handle empty tree
-        let base_oid = if base_sha == Self::empty_tree_sha() {
-            git2::Oid::from_str(base_sha)?
-        } else {
-            git2::Oid::from_str(base_sha)?
-        };
+        let base_oid = git2::Oid::from_str(base_sha)?;
 
         let head_oid = git2::Oid::from_str(head_sha)?;
 

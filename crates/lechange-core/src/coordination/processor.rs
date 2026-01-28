@@ -72,7 +72,7 @@ impl<'a> FileProcessor<'a> {
                 .files_ignore
                 .as_ref()
                 .map(|ignore| ignore.iter().map(|c| c.as_ref()).collect())
-                .unwrap_or_else(Vec::new);
+                .unwrap_or_default();
 
             let matcher = PatternMatcher::new(
                 &patterns,
@@ -109,7 +109,7 @@ impl<'a> FileProcessor<'a> {
                 .files_ignore
                 .as_ref()
                 .map(|ignore| ignore.iter().map(|c| c.as_ref()).collect())
-                .unwrap_or_else(Vec::new);
+                .unwrap_or_default();
 
             let matcher = PatternMatcher::new(
                 &patterns,

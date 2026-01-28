@@ -36,7 +36,7 @@ impl<K: Eq + std::hash::Hash + Clone, V> LruCache<K, V> {
 /// File operations handler with symlink caching
 pub struct FileOps {
     symlink_cache: RwLock<LruCache<PathBuf, bool>>,
-    cache_size: usize,
+    _cache_size: usize,
 }
 
 impl FileOps {
@@ -49,7 +49,7 @@ impl FileOps {
     pub fn with_cache_size(cache_size: usize) -> Self {
         Self {
             symlink_cache: RwLock::new(LruCache::new(cache_size)),
-            cache_size,
+            _cache_size: cache_size,
         }
     }
 
@@ -68,7 +68,7 @@ impl FileOps {
         // Check disk with tokio::fs
         let metadata = tokio::fs::symlink_metadata(&path_buf)
             .await
-            .map_err(|e| Error::Io(e))?;
+            .map_err(Error::Io)?;
 
         let is_link = metadata.file_type().is_symlink();
 
@@ -94,7 +94,7 @@ impl FileOps {
         }
 
         // Check disk with std::fs
-        let metadata = std::fs::symlink_metadata(&path_buf).map_err(|e| Error::Io(e))?;
+        let metadata = std::fs::symlink_metadata(&path_buf).map_err(Error::Io)?;
 
         let is_link = metadata.file_type().is_symlink();
 

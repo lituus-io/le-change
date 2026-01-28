@@ -18,7 +18,7 @@ impl ShaResolver {
     }
 
     /// Resolve the current (head) SHA based on config and environment
-    pub fn resolve_current_sha(&self, config: &InputConfig) -> Result<String> {
+    pub fn resolve_current_sha(&self, config: &InputConfig<'_>) -> Result<String> {
         let repo = git2::Repository::open(&self.repo_path)?;
 
         // 1. If `until` date provided: Last commit before date
@@ -43,7 +43,7 @@ impl ShaResolver {
     }
 
     /// Resolve the base SHA based on config and environment
-    pub fn resolve_base_sha(&self, config: &InputConfig) -> Result<String> {
+    pub fn resolve_base_sha(&self, config: &InputConfig<'_>) -> Result<String> {
         let repo = git2::Repository::open(&self.repo_path)?;
 
         // 1. If `base_sha` explicitly provided: Validate and use

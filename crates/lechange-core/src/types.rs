@@ -108,55 +108,89 @@ pub struct DiffResult {
 #[derive(Debug, Clone)]
 pub struct InputConfig<'a> {
     // Git references
+    /// Base commit SHA for comparison
     pub base_sha: Option<Cow<'a, str>>,
+    /// Current commit SHA
     pub sha: Option<Cow<'a, str>>,
+    /// Include changes since this date
     pub since: Option<Cow<'a, str>>,
+    /// Include changes until this date
     pub until: Option<Cow<'a, str>>,
 
     // Pattern filtering
+    /// Glob patterns to include files
     pub files: Option<Vec<Cow<'a, str>>>,
+    /// Separator for files output
     pub files_separator: Cow<'a, str>,
+    /// Glob patterns to exclude files
     pub files_ignore: Option<Vec<Cow<'a, str>>>,
+    /// Separator for ignored files output
     pub files_ignore_separator: Cow<'a, str>,
 
     // Diff configuration
+    /// Git diff filter (ACDMRTUX)
     pub diff_filter: Cow<'a, str>,
+    /// Include both old and new paths for renamed files
     pub include_all_old_new_renamed_files: bool,
+    /// Separator between old and new paths
     pub old_new_separator: Cow<'a, str>,
+    /// Separator for old/new files list
     pub old_new_files_separator: Cow<'a, str>,
 
     // Path handling
+    /// Output directory names instead of files
     pub dir_names: bool,
+    /// Maximum depth for directory names
     pub dir_names_max_depth: Option<u32>,
+    /// Enable git quotepath
     pub quotepath: bool,
+    /// Path separator for output
     pub path_separator: Cow<'a, str>,
 
     // Submodules
+    /// Include submodule changes
     pub include_submodules: bool,
+    /// Filter for submodule paths
     pub submodule_filter: Option<Cow<'a, str>>,
 
     // Fetch configuration
+    /// Git fetch depth
     pub fetch_depth: u32,
+    /// Fetch additional submodule history
     pub fetch_additional_submodule_history: bool,
 
     // Output options
+    /// Output as JSON
     pub json: bool,
+    /// Escape JSON special characters
     pub escape_json: bool,
+    /// Enable safe output mode
     pub safe_output: bool,
+    /// Output directory for file dumps
     pub output_dir: Option<Cow<'a, str>>,
 
     // Performance tuning
+    /// Skip initial fetch operation
     pub skip_initial_fetch: bool,
+    /// Use GitHub REST API instead of git
     pub use_rest_api: bool,
+    /// API URL override
     pub api_url: Option<Cow<'a, str>>,
+    /// GitHub API token
     pub token: Option<Cow<'a, str>>,
 
     // Advanced options
+    /// Write output to files
     pub write_output_files: bool,
+    /// Process negation patterns first
     pub negation_patterns_first: bool,
+    /// Match .gitignore files
     pub match_gitignore_files: bool,
+    /// Recover deleted file contents
     pub recover_deleted_files: bool,
+    /// Exclude symbolic links
     pub exclude_symlinks: bool,
+    /// SHA256 hash for verification
     pub sha256: Option<Cow<'a, str>>,
 }
 
