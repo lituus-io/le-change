@@ -29,6 +29,15 @@ pub enum Error {
     /// HTTP/API error
     Http(String),
 
+    /// Workflow API error
+    Workflow(String),
+
+    /// Workflow timeout error
+    WorkflowTimeout(String),
+
+    /// API rate limit exceeded
+    RateLimitExceeded(String),
+
     /// Other errors
     Other(String),
 }
@@ -43,6 +52,9 @@ impl fmt::Display for Error {
             Error::Runtime(msg) => write!(f, "Runtime error: {}", msg),
             Error::Pattern(msg) => write!(f, "Pattern error: {}", msg),
             Error::Http(msg) => write!(f, "HTTP error: {}", msg),
+            Error::Workflow(msg) => write!(f, "Workflow error: {}", msg),
+            Error::WorkflowTimeout(msg) => write!(f, "Workflow timeout: {}", msg),
+            Error::RateLimitExceeded(msg) => write!(f, "Rate limit exceeded: {}", msg),
             Error::Other(msg) => write!(f, "Error: {}", msg),
         }
     }
@@ -113,6 +125,9 @@ impl Error {
             Error::Runtime(msg) => ErrorKind::Runtime(msg.clone()),
             Error::Pattern(msg) => ErrorKind::Config(msg.clone()),
             Error::Http(msg) => ErrorKind::Runtime(msg.clone()),
+            Error::Workflow(msg) => ErrorKind::Runtime(msg.clone()),
+            Error::WorkflowTimeout(msg) => ErrorKind::Runtime(msg.clone()),
+            Error::RateLimitExceeded(msg) => ErrorKind::Runtime(msg.clone()),
             Error::Other(msg) => ErrorKind::Runtime(msg.clone()),
         }
     }

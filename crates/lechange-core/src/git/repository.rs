@@ -173,6 +173,10 @@ impl GitRepository {
                         previous_path,
                         is_symlink: false,
                         submodule_depth: 0,
+                        origin: crate::types::FileOrigin {
+                            in_current_changes: true,
+                            in_previous_failure: false,
+                        },
                     });
                 }
 
@@ -317,6 +321,10 @@ impl AsyncGitOps for GitRepository {
                             previous_path,
                             is_symlink: false,
                             submodule_depth: 0,
+                            origin: crate::types::FileOrigin {
+                                in_current_changes: true,
+                                in_previous_failure: false,
+                            },
                         });
                     }
 

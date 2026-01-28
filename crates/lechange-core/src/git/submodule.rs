@@ -228,6 +228,10 @@ impl SubmoduleProcessor {
                         previous_path,
                         is_symlink: false,
                         submodule_depth: current_depth + 1,
+                        origin: crate::types::FileOrigin {
+                            in_current_changes: true,
+                            in_previous_failure: false,
+                        },
                     });
                 }
 

@@ -13,6 +13,7 @@ Ultra-fast Git change detection powered by Rust with zero-copy abstractions and 
 - **50-70% Less Memory** through string interning and zero-copy design
 - **Parallel Processing** with Rayon for CPU-bound operations
 - **Async Support** for I/O-bound operations with Tokio runtime
+- **Workflow Failure Tracking** - intelligent incremental CI that tracks failures and waits for active workflows
 - **Pattern Matching** with glob syntax and negation support
 - **Submodule Support** with recursive detection
 - **Shallow Clone Compatible** with automatic depth handling
@@ -299,6 +300,156 @@ jobs:
         run: npm test
 ```
 
+### Workflow Failure Tracking
+
+Le-change can intelligently track workflow failures and wait for active workflows to complete, enabling incremental CI that focuses on fixing failed tests:
+
+```python
+from lechange import ChangeDetector, Config
+import os
+
+detector = ChangeDetector(".")
+
+# Enable workflow failure tracking
+config = Config(
+    base="main",
+    head="HEAD",
+    track_workflow_failures=True,         # Enable tracking
+    workflow_lookback_commits=5,          # Check last 5 commits
+    wait_for_active_workflows=True,       # Wait for running workflows
+    workflow_max_wait_seconds=300,        # Max 5 min wait
+    include_failed_files=True             # Merge failed files with current changes
+)
+
+# Requires GITHUB_TOKEN and GITHUB_REPOSITORY environment variables
+os.environ['GITHUB_TOKEN'] = 'your_token_here'
+os.environ['GITHUB_REPOSITORY'] = 'owner/repo'
+
+result = detector.get_changed_files(config)
+
+# Files from previous failures are marked in the origin
+for file in result.all_changed_files:
+    # Check if file was in a previous failure
+    if hasattr(file, 'in_previous_failure') and file.in_previous_failure:
+        print(f"⚠️  {file} - Previously failed, retest required")
+    else:
+        print(f"✓ {file} - New change")
+```
+
+#### Features
+
+- **Cross-Branch Active Workflow Detection**: Waits for workflows running on the same files across ALL branches before proceeding
+- **Per-Branch Failure Tracking**: Tracks failures within the same branch only (configurable lookback depth)
+- **File Origin Tracking**: Each file is marked as `in_current_changes`, `in_previous_failure`, or both
+- **Exponential Backoff**: Waits for active workflows with backoff (1s, 2s, 4s, 8s, 16s, 30s max)
+- **Zero Local Cache**: Uses GitHub Actions API only - no local storage required
+- **Automatic Deduplication**: Files appearing in both current changes and previous failures are included once with both flags set
+
+#### GitHub Actions Example
+
+```yaml
+name: Incremental CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install LeChange
+        run: pip install https://github.com/lituus-io/le-change/releases/download/v0.1.0/lechange-0.1.0-cp38-abi3-linux_x86_64.whl
+
+      - name: Detect changes with workflow tracking
+        id: changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python << 'EOF'
+          from lechange import ChangeDetector, Config
+          import os
+
+          detector = ChangeDetector('.')
+          config = Config(
+              base='origin/main',
+              head='HEAD',
+              files=['**/*.py'],
+              track_workflow_failures=True,
+              workflow_lookback_commits=5,
+              workflow_max_wait_seconds=300
+          )
+
+          result = detector.get_changed_files(config)
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"all_changed_files={result.all_changed_files}\n")
+              f.write(f"count={result.all_changed_files_count}\n")
+
+          print(f"Total files to test: {result.all_changed_files_count}")
+          print(f"Files: {result.all_changed_files}")
+          EOF
+
+      - name: Run tests on changed files
+        if: steps.changes.outputs.count > 0
+        run: |
+          pytest ${{ steps.changes.outputs.all_changed_files }}
+```
+
+#### How It Works
+
+1. **Phase 1: Active Workflow Detection**
+   - Queries all queued and in-progress workflows across ALL branches
+   - Fetches commit files for each active workflow
+   - Checks for file overlap with current changes
+   - Waits for overlapping workflows to complete with exponential backoff
+
+2. **Phase 2: Failure Tracking**
+   - Queries completed workflows on the current branch only
+   - Filters to failures within the last N commits (configurable)
+   - Fetches commit files for each failed workflow
+   - Returns list of files that failed in recent workflows
+
+3. **Phase 3: File Merging**
+   - Builds map of current changes
+   - Marks files appearing in both current changes AND previous failures
+   - Adds files that only failed (not in current changes) with `Unknown` change type
+   - Returns deduplicated list with origin flags
+
+#### Configuration Parameters
+
+```python
+config = Config(
+    track_workflow_failures=False,        # Enable workflow failure tracking
+    workflow_lookback_commits=5,          # Number of commits to check for failures
+    wait_for_active_workflows=True,       # Wait for active workflows on same files
+    workflow_max_wait_seconds=300,        # Maximum time to wait (default: 5 min)
+    include_failed_files=True             # Include files from failed workflows
+)
+```
+
+#### Environment Variables
+
+Workflow tracking requires these environment variables (automatically set in GitHub Actions):
+
+- `GITHUB_TOKEN`: GitHub API token for authentication (increases rate limit from 60 to 5000 req/hr)
+- `GITHUB_REPOSITORY`: Repository in format `owner/repo`
+- `GITHUB_REF`: Current branch reference (e.g., `refs/heads/main`)
+- `GITHUB_API_URL`: GitHub API base URL (default: `https://api.github.com`)
+
+#### Rate Limits
+
+- **Without token**: 60 requests/hour (insufficient for production use)
+- **With token**: 5000 requests/hour (recommended)
+- **Typical API calls per run**: 3-10 (2 for active workflows + 1-8 for failures)
+
 ## Configuration Options
 
 The `Config` class provides comprehensive configuration:
@@ -336,6 +487,13 @@ config = Config(
     # Repository options
     fetch_depth=0,                           # Fetch additional depth for shallow clones
                                              # 0 = unlimited
+
+    # Workflow failure tracking (requires GITHUB_TOKEN and GITHUB_REPOSITORY)
+    track_workflow_failures=False,           # Enable workflow failure tracking
+    workflow_lookback_commits=5,             # Check last N commits for failures
+    wait_for_active_workflows=True,          # Wait for active workflows on same files
+    workflow_max_wait_seconds=300,           # Maximum wait time (seconds)
+    include_failed_files=True,               # Merge failed files with current changes
 
     # Advanced options
     since_last_remote_commit=False,          # Compare with last remote commit
@@ -481,6 +639,15 @@ class PathError(LeChangeError):
 
 class RuntimeError(LeChangeError):
     """Runtime errors (e.g., async runtime creation failed)."""
+
+class WorkflowError(LeChangeError):
+    """Workflow API errors (e.g., GitHub API failure, invalid workflow data)."""
+
+class WorkflowTimeout(LeChangeError):
+    """Workflow timeout errors (e.g., active workflow did not complete in time)."""
+
+class RateLimitExceeded(LeChangeError):
+    """Rate limit errors (e.g., GitHub API rate limit exceeded)."""
 ```
 
 ## Architecture

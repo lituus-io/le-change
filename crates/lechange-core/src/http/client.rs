@@ -129,6 +129,10 @@ impl GitHubApiClient {
                 previous_path,
                 is_symlink: false, // GitHub API doesn't provide symlink info
                 submodule_depth: 0,
+                origin: crate::types::FileOrigin {
+                    in_current_changes: true,
+                    in_previous_failure: false,
+                },
             });
         }
 

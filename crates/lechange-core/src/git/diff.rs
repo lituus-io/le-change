@@ -42,6 +42,10 @@ impl<'a> DiffParser<'a> {
                     previous_path: Some(self.interner.intern(old_path.trim())),
                     is_symlink: false, // Determined later
                     submodule_depth: 0,
+                    origin: crate::types::FileOrigin {
+                        in_current_changes: true,
+                        in_previous_failure: false,
+                    },
                 })
             }
             _ => {
@@ -54,6 +58,10 @@ impl<'a> DiffParser<'a> {
                     previous_path: None,
                     is_symlink: false,
                     submodule_depth: 0,
+                    origin: crate::types::FileOrigin {
+                        in_current_changes: true,
+                        in_previous_failure: false,
+                    },
                 })
             }
         }

@@ -1,13 +1,14 @@
 //! Main file processing coordinator
 
+use crate::coordination::WorkflowTracker;
 use crate::error::Result;
 use crate::file_ops::FileOps;
 use crate::git::{GitRepository, ShaResolver, SubmoduleProcessor};
-use crate::http::GitHubApiClient;
+use crate::http::{GitHubApiClient, WorkflowApiClient};
 use crate::interner::StringInterner;
 use crate::patterns::matcher::PatternMatcher;
 use crate::traits::AsyncGitOps;
-use crate::types::{DiffResult, InputConfig};
+use crate::types::{DiffResult, InputConfig, WorkflowCheckResult};
 use rayon::prelude::*;
 use std::path::Path;
 
@@ -63,7 +64,27 @@ impl<'a> FileProcessor<'a> {
             diff.files.extend(submodule_diff.files);
         }
 
-        // Step 5: Filter by patterns (parallel with Rayon)
+        // Step 5: Workflow failure tracking
+        if self.config.track_workflow_failures {
+            let workflow_result = self.check_workflows(&mut diff.files).await?;
+
+            if workflow_result.waited {
+                eprintln!(
+                    "Waited {}ms for {} active workflows",
+                    workflow_result.wait_time_ms,
+                    workflow_result.blocking_runs.len()
+                );
+            }
+
+            if !workflow_result.failures.is_empty() {
+                eprintln!(
+                    "Found {} recent failures on branch",
+                    workflow_result.failures.len()
+                );
+            }
+        }
+
+        // Step 6: Filter by patterns (parallel with Rayon)
         if let Some(ref files_patterns) = self.config.files {
             let patterns: Vec<&str> = files_patterns.iter().map(|c| c.as_ref()).collect();
 
@@ -83,12 +104,38 @@ impl<'a> FileProcessor<'a> {
             diff.files = matcher.filter_files_parallel(&diff.files, self.interner);
         }
 
-        // Step 6: Detect symlinks (parallel)
+        // Step 7: Detect symlinks (parallel)
         if !self.config.exclude_symlinks {
             self.detect_symlinks_parallel(&mut diff.files);
         }
 
         Ok(diff)
+    }
+
+    /// Check workflows for failures and active runs
+    async fn check_workflows(
+        &self,
+        current_files: &mut Vec<crate::types::ChangedFile>,
+    ) -> Result<WorkflowCheckResult> {
+        // Get current branch from GITHUB_REF
+        let current_branch =
+            std::env::var("GITHUB_REF").unwrap_or_else(|_| "refs/heads/main".to_string());
+
+        let branch = current_branch
+            .strip_prefix("refs/heads/")
+            .unwrap_or(&current_branch);
+
+        // Create API client and tracker
+        let api_client = WorkflowApiClient::from_env()?;
+        let tracker = WorkflowTracker::new(api_client, self.config, self.interner);
+
+        // Check workflows (blocking + failure tracking)
+        let result = tracker.check_workflows(branch, current_files).await?;
+
+        // Merge failed files
+        tracker.merge_failed_files(current_files, &result.failures);
+
+        Ok(result)
     }
 
     /// Process via GitHub REST API

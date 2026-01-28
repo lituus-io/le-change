@@ -91,6 +91,8 @@ pub struct ChangedFile {
     pub is_symlink: bool,
     /// Submodule depth (0 = root)
     pub submodule_depth: u8,
+    /// File origin tracking (current changes vs previous failures)
+    pub origin: FileOrigin,
 }
 
 /// Result of a diff operation - owns minimal data
@@ -102,6 +104,86 @@ pub struct DiffResult {
     pub additions: u32,
     /// Total deletions (lines)
     pub deletions: u32,
+}
+
+/// Workflow run status from GitHub Actions
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum WorkflowStatus {
+    /// Workflow is queued
+    Queued,
+    /// Workflow is in progress
+    InProgress,
+    /// Workflow completed (check conclusion for pass/fail)
+    Completed,
+}
+
+/// Workflow run conclusion (only valid when status = Completed)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum WorkflowConclusion {
+    /// Workflow succeeded
+    Success,
+    /// Workflow failed
+    Failure,
+    /// Workflow was cancelled
+    Cancelled,
+    /// Workflow was skipped
+    Skipped,
+    /// Workflow timed out
+    TimedOut,
+    /// Other/unknown
+    Neutral,
+}
+
+/// File origin - tracks whether a file is in current changes, failed workflows, or both
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct FileOrigin {
+    /// File is in current diff
+    pub in_current_changes: bool,
+    /// File was in previous workflow failure
+    pub in_previous_failure: bool,
+}
+
+/// Workflow run metadata (minimal, following zero-copy design)
+#[derive(Debug, Clone)]
+pub struct WorkflowRun {
+    /// Workflow run ID (GitHub API)
+    pub id: u64,
+    /// Workflow name (interned string)
+    pub name: InternedString,
+    /// Status
+    pub status: WorkflowStatus,
+    /// Conclusion (if completed)
+    pub conclusion: Option<WorkflowConclusion>,
+    /// Branch (interned string)
+    pub branch: InternedString,
+    /// Head SHA (interned string)
+    pub head_sha: InternedString,
+    /// Commit timestamp (Unix epoch seconds)
+    pub created_at: i64,
+}
+
+/// Workflow failure context with affected files
+#[derive(Debug)]
+pub struct WorkflowFailure {
+    /// The failed workflow run
+    pub run: WorkflowRun,
+    /// Files that were changed in the commit that failed
+    pub files: Vec<InternedString>,
+}
+
+/// Result of workflow checking process
+#[derive(Debug, Default)]
+pub struct WorkflowCheckResult {
+    /// Workflows currently running that overlap with our files
+    pub blocking_runs: Vec<WorkflowRun>,
+    /// Recent failures on this branch
+    pub failures: Vec<WorkflowFailure>,
+    /// Did we wait for blocking workflows?
+    pub waited: bool,
+    /// Wait time in milliseconds
+    pub wait_time_ms: u64,
 }
 
 /// Configuration input - 64 parameters organized by category
@@ -192,6 +274,18 @@ pub struct InputConfig<'a> {
     pub exclude_symlinks: bool,
     /// SHA256 hash for verification
     pub sha256: Option<Cow<'a, str>>,
+
+    // Workflow failure tracking
+    /// Enable workflow failure tracking
+    pub track_workflow_failures: bool,
+    /// Number of commits to look back for failed workflows (default: 5)
+    pub workflow_lookback_commits: u32,
+    /// Check for active workflows on same files and wait (default: true)
+    pub wait_for_active_workflows: bool,
+    /// Maximum wait time for active workflows in seconds (default: 300 = 5 min)
+    pub workflow_max_wait_seconds: u32,
+    /// Include failed files in incremental CI output (default: true)
+    pub include_failed_files: bool,
 }
 
 impl<'a> Default for InputConfig<'a> {
@@ -235,6 +329,11 @@ impl<'a> Default for InputConfig<'a> {
             recover_deleted_files: false,
             exclude_symlinks: false,
             sha256: None,
+            track_workflow_failures: false,
+            workflow_lookback_commits: 5,
+            wait_for_active_workflows: true,
+            workflow_max_wait_seconds: 300,
+            include_failed_files: true,
         }
     }
 }
