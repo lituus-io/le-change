@@ -36,8 +36,8 @@ fn generate_realistic_diff_result(num_files: usize, interner: &StringInterner) -
 
     DiffResult {
         files,
-        base_sha: Cow::Borrowed("abc123"),
-        head_sha: Cow::Borrowed("def456"),
+        additions: 0,
+        deletions: 0,
     }
 }
 
