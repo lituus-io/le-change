@@ -41,7 +41,7 @@ serde_json = "1.0"
 serde_yaml = "0.9"
 
 # LRU cache for symlink detection
-lru = "0.12"
+lru = "0.16"
 
 # Memory mapping for large files
 memmap2 = "0.9"
