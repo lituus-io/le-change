@@ -11,10 +11,7 @@ pyo3::create_exception!(lechange, RuntimeError, LeChangeError);
 
 /// Register custom exceptions with Python module
 pub fn register_exceptions(module: &Bound<'_, PyModule>) -> PyResult<()> {
-    module.add(
-        "LeChangeError",
-        module.py().get_type::<LeChangeError>(),
-    )?;
+    module.add("LeChangeError", module.py().get_type::<LeChangeError>())?;
     module.add("ConfigError", module.py().get_type::<ConfigError>())?;
     module.add("GitError", module.py().get_type::<GitError>())?;
     module.add("PathError", module.py().get_type::<PathError>())?;
