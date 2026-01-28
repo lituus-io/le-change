@@ -86,13 +86,11 @@ jobs:
         run: pip install maturin
 
       - name: Build Python wheel
-        run: |
-          cd crates/lechange-python
-          maturin build --release --out dist
+        run: maturin build --release --out dist
 
       - name: Install and test
         run: |
-          pip install crates/lechange-python/dist/*.whl
+          pip install dist/*.whl
           python -c "
           import lechange
           print(f'lechange {lechange.__version__}')
