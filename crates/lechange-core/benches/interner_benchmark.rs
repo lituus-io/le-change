@@ -82,17 +82,13 @@ fn bench_resolve_strings(c: &mut Criterion) {
         let ids: Vec<_> = strings.iter().map(|s| interner.intern(s)).collect();
 
         group.throughput(Throughput::Elements(count as u64));
-        group.bench_with_input(
-            BenchmarkId::from_parameter(count),
-            &ids,
-            |b, ids| {
-                b.iter(|| {
-                    for &id in ids {
-                        let _ = interner.resolve(black_box(id));
-                    }
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::from_parameter(count), &ids, |b, ids| {
+            b.iter(|| {
+                for &id in ids {
+                    let _ = interner.resolve(black_box(id));
+                }
+            });
+        });
     }
 
     group.finish();
@@ -108,9 +104,7 @@ fn bench_intern_cached_string(c: &mut Criterion) {
     let _ = interner.intern(test_string);
 
     group.bench_function("cached_intern", |b| {
-        b.iter(|| {
-            interner.intern(black_box(test_string))
-        });
+        b.iter(|| interner.intern(black_box(test_string)));
     });
 
     group.bench_function("new_intern", |b| {
@@ -136,7 +130,8 @@ fn bench_memory_efficiency(c: &mut Criterion) {
             |b, duplicates| {
                 b.iter(|| {
                     let interner = StringInterner::new();
-                    let ids: Vec<_> = duplicates.iter()
+                    let ids: Vec<_> = duplicates
+                        .iter()
                         .map(|&s| interner.intern(black_box(s)))
                         .collect();
                     black_box(ids);
@@ -149,7 +144,8 @@ fn bench_memory_efficiency(c: &mut Criterion) {
             &duplicates,
             |b, duplicates| {
                 b.iter(|| {
-                    let strings: Vec<String> = duplicates.iter()
+                    let strings: Vec<String> = duplicates
+                        .iter()
                         .map(|&s| black_box(s).to_string())
                         .collect();
                     black_box(strings);

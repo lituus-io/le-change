@@ -2,15 +2,15 @@
 
 use pyo3::prelude::*;
 
-mod runtime;
-mod error;
 mod config;
-mod result;
 mod detector;
+mod error;
+mod result;
+mod runtime;
 
 pub use config::PyConfig;
-pub use result::PyChangedFiles;
 pub use detector::PyChangeDetector;
+pub use result::PyChangedFiles;
 
 /// LeChange Python module
 #[pymodule]

@@ -1,13 +1,13 @@
 //! Main file processing coordinator
 
-use crate::types::{DiffResult, InputConfig};
-use crate::interner::StringInterner;
 use crate::error::Result;
-use crate::git::{GitRepository, ShaResolver, SubmoduleProcessor};
-use crate::patterns::matcher::PatternMatcher;
 use crate::file_ops::FileOps;
+use crate::git::{GitRepository, ShaResolver, SubmoduleProcessor};
 use crate::http::GitHubApiClient;
+use crate::interner::StringInterner;
+use crate::patterns::matcher::PatternMatcher;
 use crate::traits::AsyncGitOps;
+use crate::types::{DiffResult, InputConfig};
 use rayon::prelude::*;
 use std::path::Path;
 
@@ -40,20 +40,22 @@ impl<'a> FileProcessor<'a> {
         }
 
         // Step 2: Resolve SHAs
-        let repo_path = std::env::current_dir()
-            .unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let repo_path = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
 
         let sha_resolver = ShaResolver::new(&repo_path);
         let base_sha = sha_resolver.resolve_base_sha(self.config)?;
         let head_sha = sha_resolver.resolve_current_sha(self.config)?;
 
         // Step 3: Compute diff
-        let mut diff = self.git_ops.diff(
-            &base_sha,
-            &head_sha,
-            self.interner,
-            &self.config.diff_filter,
-        ).await?;
+        let mut diff = self
+            .git_ops
+            .diff(
+                &base_sha,
+                &head_sha,
+                self.interner,
+                &self.config.diff_filter,
+            )
+            .await?;
 
         // Step 4: Process submodules if enabled
         if self.config.include_submodules {
@@ -63,11 +65,12 @@ impl<'a> FileProcessor<'a> {
 
         // Step 5: Filter by patterns (parallel with Rayon)
         if let Some(ref files_patterns) = self.config.files {
-            let patterns: Vec<&str> = files_patterns.iter()
-                .map(|c| c.as_ref())
-                .collect();
+            let patterns: Vec<&str> = files_patterns.iter().map(|c| c.as_ref()).collect();
 
-            let ignore_patterns: Vec<&str> = self.config.files_ignore.as_ref()
+            let ignore_patterns: Vec<&str> = self
+                .config
+                .files_ignore
+                .as_ref()
                 .map(|ignore| ignore.iter().map(|c| c.as_ref()).collect())
                 .unwrap_or_else(Vec::new);
 
@@ -93,15 +96,18 @@ impl<'a> FileProcessor<'a> {
         let client = GitHubApiClient::from_env()?;
         let (owner, repo, pr_number) = GitHubApiClient::extract_pr_info_from_env()?;
 
-        let mut diff = client.fetch_changed_files(&owner, &repo, pr_number, self.interner).await?;
+        let mut diff = client
+            .fetch_changed_files(&owner, &repo, pr_number, self.interner)
+            .await?;
 
         // Apply pattern filtering if configured
         if let Some(ref files_patterns) = self.config.files {
-            let patterns: Vec<&str> = files_patterns.iter()
-                .map(|c| c.as_ref())
-                .collect();
+            let patterns: Vec<&str> = files_patterns.iter().map(|c| c.as_ref()).collect();
 
-            let ignore_patterns: Vec<&str> = self.config.files_ignore.as_ref()
+            let ignore_patterns: Vec<&str> = self
+                .config
+                .files_ignore
+                .as_ref()
                 .map(|ignore| ignore.iter().map(|c| c.as_ref()).collect())
                 .unwrap_or_else(Vec::new);
 
@@ -118,13 +124,8 @@ impl<'a> FileProcessor<'a> {
     }
 
     /// Process submodules recursively
-    async fn process_submodules(
-        &self,
-        base_sha: &str,
-        head_sha: &str,
-    ) -> Result<DiffResult> {
-        let repo_path = std::env::current_dir()
-            .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    async fn process_submodules(&self, base_sha: &str, head_sha: &str) -> Result<DiffResult> {
+        let repo_path = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
 
         let max_depth = self.config.dir_names_max_depth.map(|d| d as u8);
         let processor = SubmoduleProcessor::new(&repo_path, max_depth);

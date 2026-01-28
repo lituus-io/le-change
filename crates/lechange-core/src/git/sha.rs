@@ -78,8 +78,12 @@ impl ShaResolver {
         }
 
         // Try as reference (branch, tag, HEAD, etc.)
-        let resolved = repo.revparse_single(reference)
-            .map_err(|e| Error::Git(format!("Failed to resolve reference '{}': {}", reference, e)))?;
+        let resolved = repo.revparse_single(reference).map_err(|e| {
+            Error::Git(format!(
+                "Failed to resolve reference '{}': {}",
+                reference, e
+            ))
+        })?;
 
         Ok(resolved.id().to_string())
     }
@@ -116,7 +120,10 @@ impl ShaResolver {
             }
         }
 
-        Err(Error::Git(format!("No commits found before date '{}'", date_str)))
+        Err(Error::Git(format!(
+            "No commits found before date '{}'",
+            date_str
+        )))
     }
 
     /// Parse a date string to Unix timestamp
@@ -124,7 +131,12 @@ impl ShaResolver {
         // Try parsing ISO 8601 format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS
         // For now, use git's date parsing via command line
         let output = std::process::Command::new("git")
-            .args(["log", "-1", "--format=%ct", &format!("--before={}", date_str)])
+            .args([
+                "log",
+                "-1",
+                "--format=%ct",
+                &format!("--before={}", date_str),
+            ])
             .current_dir(&self.repo_path)
             .output()
             .map_err(|e| Error::Git(format!("Failed to parse date: {}", e)))?;
@@ -134,7 +146,8 @@ impl ShaResolver {
         }
 
         let timestamp_str = String::from_utf8_lossy(&output.stdout);
-        timestamp_str.trim()
+        timestamp_str
+            .trim()
             .parse::<i64>()
             .map_err(|e| Error::Git(format!("Failed to parse timestamp from git: {}", e)))
     }
@@ -148,7 +161,8 @@ impl ShaResolver {
         let oid2 = git2::Oid::from_str(commit2)
             .map_err(|e| Error::Git(format!("Invalid SHA '{}': {}", commit2, e)))?;
 
-        let merge_base = repo.merge_base(oid1, oid2)
+        let merge_base = repo
+            .merge_base(oid1, oid2)
             .map_err(|e| Error::Git(format!("Failed to find merge base: {}", e)))?;
 
         Ok(merge_base.to_string())

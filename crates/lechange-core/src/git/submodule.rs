@@ -1,8 +1,8 @@
 //! Submodule handling with recursive diff support
 
 use crate::error::{Error, Result};
-use crate::types::{ChangedFile, ChangeType, DiffResult};
 use crate::interner::StringInterner;
+use crate::types::{ChangeType, ChangedFile, DiffResult};
 use std::path::{Path, PathBuf};
 
 /// Submodule processor for recursive change detection
@@ -218,12 +218,10 @@ impl SubmoduleProcessor {
                     let previous_path = if change_type == ChangeType::Renamed
                         || change_type == ChangeType::Copied
                     {
-                        old_file.path()
-                            .and_then(|p| p.to_str())
-                            .map(|old_p| {
-                                let full_old_path = format!("{}/{}", submodule_path, old_p);
-                                interner.intern(&full_old_path)
-                            })
+                        old_file.path().and_then(|p| p.to_str()).map(|old_p| {
+                            let full_old_path = format!("{}/{}", submodule_path, old_p);
+                            interner.intern(&full_old_path)
+                        })
                     } else {
                         None
                     };
@@ -350,14 +348,22 @@ mod tests {
 
         // Add submodule to main repo
         let output = std::process::Command::new("git")
-            .args(["submodule", "add", sub_path.to_str().unwrap(), "mysubmodule"])
+            .args([
+                "submodule",
+                "add",
+                sub_path.to_str().unwrap(),
+                "mysubmodule",
+            ])
             .current_dir(&main_path)
             .output()
             .unwrap();
 
         // Debug: Print output if failed
         if !output.status.success() {
-            eprintln!("git submodule add failed: {}", String::from_utf8_lossy(&output.stderr));
+            eprintln!(
+                "git submodule add failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
 
         // Commit the submodule
@@ -414,7 +420,9 @@ mod tests {
         let head_sha = &commits[0]; // Commit with submodule
 
         let processor = SubmoduleProcessor::new(&main_path, None);
-        let changes = processor.extract_submodule_changes(base_sha, head_sha).unwrap();
+        let changes = processor
+            .extract_submodule_changes(base_sha, head_sha)
+            .unwrap();
 
         assert!(!changes.is_empty(), "Expected to find submodule changes");
         assert_eq!(changes[0].0, "mysubmodule");

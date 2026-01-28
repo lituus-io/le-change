@@ -175,7 +175,10 @@ impl PyConfig {
     }
 
     fn __repr__(&self) -> String {
-        format!("Config(json={}, diff_filter={})", self.json, self.diff_filter)
+        format!(
+            "Config(json={}, diff_filter={})",
+            self.json, self.diff_filter
+        )
     }
 }
 
@@ -187,13 +190,15 @@ impl PyConfig {
             sha: self.sha.as_ref().map(|s| Cow::Owned(s.clone())),
             since: self.since.as_ref().map(|s| Cow::Owned(s.clone())),
             until: self.until.as_ref().map(|s| Cow::Owned(s.clone())),
-            files: self.files.as_ref().map(|v|
-                v.iter().map(|s| Cow::Owned(s.clone())).collect()
-            ),
+            files: self
+                .files
+                .as_ref()
+                .map(|v| v.iter().map(|s| Cow::Owned(s.clone())).collect()),
             files_separator: Cow::Owned(self.files_separator.clone()),
-            files_ignore: self.files_ignore.as_ref().map(|v|
-                v.iter().map(|s| Cow::Owned(s.clone())).collect()
-            ),
+            files_ignore: self
+                .files_ignore
+                .as_ref()
+                .map(|v| v.iter().map(|s| Cow::Owned(s.clone())).collect()),
             files_ignore_separator: Cow::Owned(self.files_ignore_separator.clone()),
             diff_filter: Cow::Owned(self.diff_filter.clone()),
             include_all_old_new_renamed_files: self.include_all_old_new_renamed_files,
@@ -204,7 +209,10 @@ impl PyConfig {
             quotepath: self.quotepath,
             path_separator: Cow::Owned(self.path_separator.clone()),
             include_submodules: self.include_submodules,
-            submodule_filter: self.submodule_filter.as_ref().map(|s| Cow::Owned(s.clone())),
+            submodule_filter: self
+                .submodule_filter
+                .as_ref()
+                .map(|s| Cow::Owned(s.clone())),
             fetch_depth: self.fetch_depth,
             fetch_additional_submodule_history: self.fetch_additional_submodule_history,
             json: self.json,

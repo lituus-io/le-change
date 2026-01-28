@@ -1,15 +1,15 @@
 //! Git repository operations with async support
 
+use parking_lot::Mutex;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 use crate::error::{Error, Result};
-use crate::traits::AsyncGitOps;
-use crate::types::{DiffResult, ChangeType, ChangedFile};
-use crate::interner::StringInterner;
 use crate::git::diff::DiffParser;
+use crate::interner::StringInterner;
+use crate::traits::AsyncGitOps;
+use crate::types::{ChangeType, ChangedFile, DiffResult};
 
 /// Git repository wrapper that handles Send/Sync constraints
 ///
@@ -141,7 +141,12 @@ impl GitRepository {
                 };
 
                 // Filter by diff_filter
-                let type_char = change_type.as_str().chars().next().unwrap_or('X').to_ascii_uppercase();
+                let type_char = change_type
+                    .as_str()
+                    .chars()
+                    .next()
+                    .unwrap_or('X')
+                    .to_ascii_uppercase();
                 if !diff_filter.contains(type_char) {
                     return true; // Continue
                 }
@@ -151,8 +156,13 @@ impl GitRepository {
                 let old_file = delta.old_file();
 
                 if let Some(new_path) = new_file.path().and_then(|p| p.to_str()) {
-                    let previous_path = if change_type == ChangeType::Renamed || change_type == ChangeType::Copied {
-                        old_file.path().and_then(|p| p.to_str()).map(|s| interner.intern(s))
+                    let previous_path = if change_type == ChangeType::Renamed
+                        || change_type == ChangeType::Copied
+                    {
+                        old_file
+                            .path()
+                            .and_then(|p| p.to_str())
+                            .map(|s| interner.intern(s))
                     } else {
                         None
                     };
@@ -189,8 +199,12 @@ impl GitRepository {
         }
 
         // Try as reference
-        let resolved = repo.revparse_single(reference)
-            .map_err(|e| Error::Git(format!("Failed to resolve reference '{}': {}", reference, e)))?;
+        let resolved = repo.revparse_single(reference).map_err(|e| {
+            Error::Git(format!(
+                "Failed to resolve reference '{}': {}",
+                reference, e
+            ))
+        })?;
 
         Ok(resolved.id().to_string())
     }
@@ -214,15 +228,18 @@ impl GitRepository {
 impl AsyncGitOps for GitRepository {
     type Error = Error;
 
-    type DiffFuture<'a> = impl Future<Output = Result<DiffResult>> + Send + 'a
+    type DiffFuture<'a>
+        = impl Future<Output = Result<DiffResult>> + Send + 'a
     where
         Self: 'a;
 
-    type ResolveShaFuture<'a> = impl Future<Output = Result<String>> + Send + 'a
+    type ResolveShaFuture<'a>
+        = impl Future<Output = Result<String>> + Send + 'a
     where
         Self: 'a;
 
-    type SubmodulesFuture<'a> = impl Future<Output = Result<Vec<String>>> + Send + 'a
+    type SubmodulesFuture<'a>
+        = impl Future<Output = Result<Vec<String>>> + Send + 'a
     where
         Self: 'a;
 
@@ -252,7 +269,8 @@ impl AsyncGitOps for GitRepository {
             let mut opts = git2::DiffOptions::new();
             opts.ignore_submodules(true);
 
-            let diff = repo.diff_tree_to_tree(Some(&base_tree), Some(&head_tree), Some(&mut opts))?;
+            let diff =
+                repo.diff_tree_to_tree(Some(&base_tree), Some(&head_tree), Some(&mut opts))?;
             let mut result = DiffResult::default();
 
             diff.foreach(
@@ -269,7 +287,12 @@ impl AsyncGitOps for GitRepository {
                         _ => ChangeType::Unknown,
                     };
 
-                    let type_char = change_type.as_str().chars().next().unwrap_or('X').to_ascii_uppercase();
+                    let type_char = change_type
+                        .as_str()
+                        .chars()
+                        .next()
+                        .unwrap_or('X')
+                        .to_ascii_uppercase();
                     if !diff_filter.contains(type_char) {
                         return true;
                     }
@@ -278,8 +301,13 @@ impl AsyncGitOps for GitRepository {
                     let old_file = delta.old_file();
 
                     if let Some(new_path) = new_file.path().and_then(|p| p.to_str()) {
-                        let previous_path = if change_type == ChangeType::Renamed || change_type == ChangeType::Copied {
-                            old_file.path().and_then(|p| p.to_str()).map(|s| interner.intern(s))
+                        let previous_path = if change_type == ChangeType::Renamed
+                            || change_type == ChangeType::Copied
+                        {
+                            old_file
+                                .path()
+                                .and_then(|p| p.to_str())
+                                .map(|s| interner.intern(s))
                         } else {
                             None
                         };
@@ -431,7 +459,9 @@ mod tests {
 
         // Compute diff
         let interner = StringInterner::new();
-        let result = repo.diff_sync(&base_sha, &head_sha, &interner, "ACDMRTUX").unwrap();
+        let result = repo
+            .diff_sync(&base_sha, &head_sha, &interner, "ACDMRTUX")
+            .unwrap();
 
         assert_eq!(result.files.len(), 1);
         assert_eq!(result.files[0].change_type, crate::types::ChangeType::Added);

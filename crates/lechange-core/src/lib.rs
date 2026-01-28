@@ -32,22 +32,20 @@
 #![feature(impl_trait_in_assoc_type)]
 #![warn(missing_docs, rust_2018_idioms)]
 
-pub mod types;
-pub mod interner;
-pub mod traits;
-pub mod git;
-pub mod patterns;
-pub mod http;
 pub mod coordination;
-pub mod platform;
 pub mod error;
 pub mod file_ops;
+pub mod git;
+pub mod http;
+pub mod interner;
+pub mod patterns;
+pub mod platform;
+pub mod traits;
+pub mod types;
 
-pub use types::{
-    InternedString, ChangeType, ChangedFile, DiffResult, InputConfig
-};
-pub use interner::StringInterner;
 pub use error::{Error, Result};
+pub use interner::StringInterner;
+pub use types::{ChangeType, ChangedFile, DiffResult, InputConfig, InternedString};
 
 /// Detect changed files between two git references
 ///

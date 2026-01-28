@@ -1,7 +1,7 @@
 //! Git diff parsing with zero-copy
 
-use crate::types::{ChangeType, ChangedFile};
 use crate::interner::StringInterner;
+use crate::types::{ChangeType, ChangedFile};
 
 /// Zero-copy git diff parser
 pub struct DiffParser<'a> {
@@ -87,6 +87,9 @@ mod tests {
 
         assert_eq!(file.change_type, ChangeType::Renamed);
         assert_eq!(interner.resolve(file.path), Some("new/path.rs"));
-        assert_eq!(interner.resolve(file.previous_path.unwrap()), Some("old/path.rs"));
+        assert_eq!(
+            interner.resolve(file.previous_path.unwrap()),
+            Some("old/path.rs")
+        );
     }
 }

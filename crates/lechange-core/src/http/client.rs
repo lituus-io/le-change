@@ -1,8 +1,8 @@
 //! GitHub REST API client for pull request file fetching
 
 use crate::error::{Error, Result};
-use crate::types::{ChangedFile, ChangeType, DiffResult};
 use crate::interner::StringInterner;
+use crate::types::{ChangeType, ChangedFile, DiffResult};
 use serde::Deserialize;
 
 /// GitHub API response for a changed file
@@ -66,7 +66,8 @@ impl GitHubApiClient {
 
         // Paginate through all results (GitHub returns max 100 per page)
         loop {
-            let mut request = self.client
+            let mut request = self
+                .client
                 .get(&url)
                 .query(&[("page", page.to_string()), ("per_page", "100".to_string())]);
 
@@ -87,10 +88,9 @@ impl GitHubApiClient {
                 )));
             }
 
-            let files: Vec<GitHubFile> = response
-                .json()
-                .await
-                .map_err(|e| Error::Runtime(format!("Failed to parse GitHub API response: {}", e)))?;
+            let files: Vec<GitHubFile> = response.json().await.map_err(|e| {
+                Error::Runtime(format!("Failed to parse GitHub API response: {}", e))
+            })?;
 
             if files.is_empty() {
                 break;
@@ -101,7 +101,9 @@ impl GitHubApiClient {
 
             // Safety limit to prevent infinite loops
             if page > 1000 {
-                return Err(Error::Runtime("Too many pages in GitHub API response".to_string()));
+                return Err(Error::Runtime(
+                    "Too many pages in GitHub API response".to_string(),
+                ));
             }
         }
 
@@ -119,9 +121,7 @@ impl GitHubApiClient {
                 _ => ChangeType::Unknown,
             };
 
-            let previous_path = file.previous_filename
-                .as_ref()
-                .map(|p| interner.intern(p));
+            let previous_path = file.previous_filename.as_ref().map(|p| interner.intern(p));
 
             result.files.push(ChangedFile {
                 path: interner.intern(&file.filename),
@@ -143,7 +143,10 @@ impl GitHubApiClient {
 
         let parts: Vec<&str> = repository.split('/').collect();
         if parts.len() != 2 {
-            return Err(Error::Config(format!("Invalid GITHUB_REPOSITORY format: {}", repository)));
+            return Err(Error::Config(format!(
+                "Invalid GITHUB_REPOSITORY format: {}",
+                repository
+            )));
         }
 
         let owner = parts[0].to_string();
@@ -156,10 +159,14 @@ impl GitHubApiClient {
         let pr_number = if github_ref.starts_with("refs/pull/") {
             let pr_parts: Vec<&str> = github_ref.split('/').collect();
             if pr_parts.len() >= 3 {
-                pr_parts[2].parse::<u32>()
-                    .map_err(|_| Error::Config(format!("Invalid PR number in GITHUB_REF: {}", github_ref)))?
+                pr_parts[2].parse::<u32>().map_err(|_| {
+                    Error::Config(format!("Invalid PR number in GITHUB_REF: {}", github_ref))
+                })?
             } else {
-                return Err(Error::Config(format!("Invalid GITHUB_REF format: {}", github_ref)));
+                return Err(Error::Config(format!(
+                    "Invalid GITHUB_REF format: {}",
+                    github_ref
+                )));
             }
         } else {
             return Err(Error::Config("Not a pull request event".to_string()));

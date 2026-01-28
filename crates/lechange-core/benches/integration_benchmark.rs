@@ -1,8 +1,8 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use lechange_core::{
     interner::StringInterner,
-    types::{ChangedFile, ChangeType, DiffResult},
     patterns::matcher::PatternMatcher,
+    types::{ChangeType, ChangedFile, DiffResult},
 };
 use std::borrow::Cow;
 
@@ -29,7 +29,7 @@ fn generate_realistic_diff_result(num_files: usize, interner: &StringInterner) -
             path: interner.intern(&path),
             previous_path,
             change_type,
-            is_symlink: i % 50 == 0, // 2% symlinks
+            is_symlink: i % 50 == 0,                           // 2% symlinks
             submodule_depth: if i % 100 == 0 { 1 } else { 0 }, // 1% in submodules
         });
     }
@@ -60,10 +60,8 @@ fn bench_full_pipeline(c: &mut Criterion) {
                     let matcher = PatternMatcher::new(&pattern_refs, &[], false).unwrap();
 
                     // Filter by patterns
-                    let filtered = matcher.filter_files_parallel(
-                        black_box(&diff_result.files),
-                        &interner
-                    );
+                    let filtered =
+                        matcher.filter_files_parallel(black_box(&diff_result.files), &interner);
 
                     // Group by change type
                     let mut added = 0;
@@ -104,7 +102,8 @@ fn bench_grouping_by_change_type(c: &mut Criterion) {
                     let mut groups = std::collections::HashMap::new();
 
                     for file in files {
-                        groups.entry(file.change_type)
+                        groups
+                            .entry(file.change_type)
                             .or_insert_with(Vec::new)
                             .push(file);
                     }
@@ -161,10 +160,8 @@ fn bench_filter_symlinks(c: &mut Criterion) {
             &diff_result.files,
             |b, files| {
                 b.iter(|| {
-                    let non_symlinks: Vec<_> = files.iter()
-                        .filter(|f| !f.is_symlink)
-                        .cloned()
-                        .collect();
+                    let non_symlinks: Vec<_> =
+                        files.iter().filter(|f| !f.is_symlink).cloned().collect();
 
                     black_box(non_symlinks)
                 });
@@ -188,7 +185,8 @@ fn bench_filter_submodules(c: &mut Criterion) {
             &diff_result.files,
             |b, files| {
                 b.iter(|| {
-                    let root_files: Vec<_> = files.iter()
+                    let root_files: Vec<_> = files
+                        .iter()
                         .filter(|f| f.submodule_depth == 0)
                         .cloned()
                         .collect();
@@ -215,10 +213,22 @@ fn bench_count_operations(c: &mut Criterion) {
             &diff_result.files,
             |b, files| {
                 b.iter(|| {
-                    let added = files.iter().filter(|f| f.change_type == ChangeType::Added).count();
-                    let modified = files.iter().filter(|f| f.change_type == ChangeType::Modified).count();
-                    let deleted = files.iter().filter(|f| f.change_type == ChangeType::Deleted).count();
-                    let renamed = files.iter().filter(|f| f.change_type == ChangeType::Renamed).count();
+                    let added = files
+                        .iter()
+                        .filter(|f| f.change_type == ChangeType::Added)
+                        .count();
+                    let modified = files
+                        .iter()
+                        .filter(|f| f.change_type == ChangeType::Modified)
+                        .count();
+                    let deleted = files
+                        .iter()
+                        .filter(|f| f.change_type == ChangeType::Deleted)
+                        .count();
+                    let renamed = files
+                        .iter()
+                        .filter(|f| f.change_type == ChangeType::Renamed)
+                        .count();
 
                     black_box((added, modified, deleted, renamed))
                 });
@@ -245,9 +255,7 @@ fn bench_parallel_pattern_filtering(c: &mut Criterion) {
             BenchmarkId::from_parameter(size),
             &diff_result.files,
             |b, files| {
-                b.iter(|| {
-                    matcher.filter_files_parallel(black_box(files), &interner)
-                });
+                b.iter(|| matcher.filter_files_parallel(black_box(files), &interner));
             },
         );
     }
@@ -263,21 +271,16 @@ fn bench_json_serialization(c: &mut Criterion) {
         let diff_result = generate_realistic_diff_result(size, &interner);
 
         // Convert to strings
-        let paths: Vec<String> = diff_result.files
+        let paths: Vec<String> = diff_result
+            .files
             .iter()
             .filter_map(|f| interner.resolve(f.path).map(|s| s.to_string()))
             .collect();
 
         group.throughput(Throughput::Elements(size as u64));
-        group.bench_with_input(
-            BenchmarkId::from_parameter(size),
-            &paths,
-            |b, paths| {
-                b.iter(|| {
-                    serde_json::to_string(black_box(paths)).unwrap()
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::from_parameter(size), &paths, |b, paths| {
+            b.iter(|| serde_json::to_string(black_box(paths)).unwrap());
+        });
     }
 
     group.finish();

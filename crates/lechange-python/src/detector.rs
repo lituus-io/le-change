@@ -1,11 +1,11 @@
 //! Main detector wrapper
 
-use pyo3::prelude::*;
-use std::path::PathBuf;
 use crate::config::PyConfig;
 use crate::result::PyChangedFiles;
 use crate::runtime::block_on_runtime;
 use lechange_core::StringInterner;
+use pyo3::prelude::*;
+use std::path::PathBuf;
 
 /// Python change detector wrapper
 #[pyclass(name = "ChangeDetector")]
@@ -19,18 +19,16 @@ impl PyChangeDetector {
     fn new(repo_path: Option<&str>) -> PyResult<Self> {
         let path = repo_path
             .map(PathBuf::from)
-            .unwrap_or_else(|| std::env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from(".")));
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
         if !path.exists() {
-            return Err(PyErr::new::<crate::error::PathError, _>(
-                format!("Path does not exist: {}", path.display())
-            ));
+            return Err(PyErr::new::<crate::error::PathError, _>(format!(
+                "Path does not exist: {}",
+                path.display()
+            )));
         }
 
-        Ok(Self {
-            repo_path: path,
-        })
+        Ok(Self { repo_path: path })
     }
 
     fn get_changed_files(&self, config: PyConfig) -> PyResult<PyChangedFiles> {

@@ -1,11 +1,13 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use lechange_core::interner::StringInterner;
 use lechange_core::patterns::matcher::PatternMatcher;
 use lechange_core::types::ChangedFile;
-use lechange_core::interner::StringInterner;
 
 fn generate_test_paths(count: usize) -> Vec<String> {
     let extensions = ["rs", "py", "js", "ts", "go", "java", "cpp", "c", "h", "md"];
-    let directories = ["src", "tests", "benches", "examples", "docs", "lib", "api", "core"];
+    let directories = [
+        "src", "tests", "benches", "examples", "docs", "lib", "api", "core",
+    ];
 
     (0..count)
         .map(|i| {
@@ -21,8 +23,14 @@ fn bench_pattern_compilation(c: &mut Criterion) {
 
     let pattern_sets = vec![
         (vec!["**/*.rs"], "single_extension"),
-        (vec!["**/*.rs", "**/*.toml", "**/*.md"], "multiple_extensions"),
-        (vec!["src/**", "tests/**", "benches/**"], "directory_patterns"),
+        (
+            vec!["**/*.rs", "**/*.toml", "**/*.md"],
+            "multiple_extensions",
+        ),
+        (
+            vec!["src/**", "tests/**", "benches/**"],
+            "directory_patterns",
+        ),
         (vec!["**/*.{rs,toml,md}"], "brace_expansion"),
         (
             vec![
@@ -41,9 +49,7 @@ fn bench_pattern_compilation(c: &mut Criterion) {
             &patterns,
             |b, patterns| {
                 let pattern_refs: Vec<&str> = patterns.iter().map(|s| s.as_str()).collect();
-                b.iter(|| {
-                    PatternMatcher::new(black_box(&pattern_refs), &[], false)
-                });
+                b.iter(|| PatternMatcher::new(black_box(&pattern_refs), &[], false));
             },
         );
     }
@@ -67,15 +73,9 @@ fn bench_single_path_matching(c: &mut Criterion) {
     ];
 
     for (name, path) in test_paths {
-        group.bench_with_input(
-            BenchmarkId::from_parameter(name),
-            &path,
-            |b, &path| {
-                b.iter(|| {
-                    matcher.matches_sync(black_box(path))
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::from_parameter(name), &path, |b, &path| {
+            b.iter(|| matcher.matches_sync(black_box(path)));
+        });
     }
 
     group.finish();
@@ -104,15 +104,9 @@ fn bench_bulk_filtering(c: &mut Criterion) {
             .collect();
 
         group.throughput(Throughput::Elements(count as u64));
-        group.bench_with_input(
-            BenchmarkId::from_parameter(count),
-            &files,
-            |b, files| {
-                b.iter(|| {
-                    matcher.filter_files_parallel(black_box(files), &interner)
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::from_parameter(count), &files, |b, files| {
+            b.iter(|| matcher.filter_files_parallel(black_box(files), &interner));
+        });
     }
 
     group.finish();
@@ -143,33 +137,25 @@ fn bench_sequential_vs_parallel(c: &mut Criterion) {
         group.throughput(Throughput::Elements(count as u64));
 
         // Sequential benchmark
-        group.bench_with_input(
-            BenchmarkId::new("sequential", count),
-            &files,
-            |b, files| {
-                b.iter(|| {
-                    files.iter()
-                        .filter(|file| {
-                            interner.resolve(file.path)
-                                .map(|path| matcher.matches_sync(path))
-                                .unwrap_or(false)
-                        })
-                        .cloned()
-                        .collect::<Vec<_>>()
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("sequential", count), &files, |b, files| {
+            b.iter(|| {
+                files
+                    .iter()
+                    .filter(|file| {
+                        interner
+                            .resolve(file.path)
+                            .map(|path| matcher.matches_sync(path))
+                            .unwrap_or(false)
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>()
+            });
+        });
 
         // Parallel benchmark
-        group.bench_with_input(
-            BenchmarkId::new("parallel", count),
-            &files,
-            |b, files| {
-                b.iter(|| {
-                    matcher.filter_files_parallel(black_box(files), &interner)
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("parallel", count), &files, |b, files| {
+            b.iter(|| matcher.filter_files_parallel(black_box(files), &interner));
+        });
     }
 
     group.finish();
@@ -187,7 +173,7 @@ fn bench_negation_patterns(c: &mut Criterion) {
     let matcher = PatternMatcher::new(&include_refs, &exclude_refs, false).unwrap();
 
     let test_paths = vec![
-        "src/main.rs",                    // Should match
+        "src/main.rs",                   // Should match
         "node_modules/package/index.js", // Should not match
         "target/debug/app",              // Should not match
         ".git/config",                   // Should not match
@@ -195,15 +181,9 @@ fn bench_negation_patterns(c: &mut Criterion) {
     ];
 
     for path in test_paths {
-        group.bench_with_input(
-            BenchmarkId::from_parameter(path),
-            &path,
-            |b, &path| {
-                b.iter(|| {
-                    matcher.matches_sync(black_box(path))
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::from_parameter(path), &path, |b, &path| {
+            b.iter(|| matcher.matches_sync(black_box(path)));
+        });
     }
 
     group.finish();

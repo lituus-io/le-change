@@ -1,8 +1,8 @@
 //! GATs trait definitions for zero-cost async operations
 
-use std::future::Future;
-use crate::types::DiffResult;
 use crate::interner::StringInterner;
+use crate::types::DiffResult;
+use std::future::Future;
 
 /// Git operations trait using GATs for zero-cost async
 /// No boxing, no dynamic dispatch - pure compile-time polymorphism
@@ -21,7 +21,9 @@ pub trait AsyncGitOps {
         Self: 'a;
 
     /// GAT for async submodule listing
-    type SubmodulesFuture<'a>: Future<Output = std::result::Result<Vec<String>, Self::Error>> + Send + 'a
+    type SubmodulesFuture<'a>: Future<Output = std::result::Result<Vec<String>, Self::Error>>
+        + Send
+        + 'a
     where
         Self: 'a;
 

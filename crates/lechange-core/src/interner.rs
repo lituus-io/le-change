@@ -1,9 +1,9 @@
 //! String interner for zero-copy path deduplication
 
+use crate::types::InternedString;
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
-use parking_lot::RwLock;
-use crate::types::InternedString;
 
 /// Thread-safe string interner using Arc for shared ownership
 /// Uses copy-on-write strategy to minimize allocations

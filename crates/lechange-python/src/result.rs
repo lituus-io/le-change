@@ -1,9 +1,9 @@
 //! Result type conversions
 
+use lechange_core::interner::StringInterner;
+use lechange_core::{ChangeType, DiffResult};
 use pyo3::prelude::*;
 use pyo3::types::PyList;
-use lechange_core::{DiffResult, ChangeType};
-use lechange_core::interner::StringInterner;
 
 /// Python result wrapper
 #[pyclass(name = "ChangedFiles")]

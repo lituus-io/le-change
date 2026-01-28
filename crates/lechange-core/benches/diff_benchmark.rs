@@ -19,7 +19,10 @@ fn generate_diff_output(num_files: usize) -> String {
         };
 
         if change_type.starts_with('R') || change_type.starts_with('C') {
-            output.push_str(&format!("{}\told/path_{}.rs\tnew/path_{}.rs\n", change_type, i, i));
+            output.push_str(&format!(
+                "{}\told/path_{}.rs\tnew/path_{}.rs\n",
+                change_type, i, i
+            ));
         } else {
             output.push_str(&format!("{}\tpath/to/file_{}.rs\n", change_type, i));
         }
@@ -71,16 +74,12 @@ fn bench_diff_line_types(c: &mut Criterion) {
     ];
 
     for (name, line) in test_cases {
-        group.bench_with_input(
-            BenchmarkId::from_parameter(name),
-            &line,
-            |b, &line| {
-                let parser = DiffParser::new(&interner);
-                b.iter(|| {
-                    let _ = parser.parse_diff_line(black_box(line));
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::from_parameter(name), &line, |b, &line| {
+            let parser = DiffParser::new(&interner);
+            b.iter(|| {
+                let _ = parser.parse_diff_line(black_box(line));
+            });
+        });
     }
 
     group.finish();
@@ -101,15 +100,9 @@ fn bench_change_type_parsing(c: &mut Criterion) {
     ];
 
     for (byte, name) in change_bytes {
-        group.bench_with_input(
-            BenchmarkId::from_parameter(name),
-            &byte,
-            |b, &byte| {
-                b.iter(|| {
-                    ChangeType::from_byte(black_box(byte))
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::from_parameter(name), &byte, |b, &byte| {
+            b.iter(|| ChangeType::from_byte(black_box(byte)));
+        });
     }
 
     group.finish();
@@ -121,9 +114,7 @@ fn bench_memchr_vs_find(c: &mut Criterion) {
     let test_line = b"M\tpath/to/very/long/file/name/that/simulates/real/repository/structure.rs";
 
     group.bench_function("memchr", |b| {
-        b.iter(|| {
-            memchr::memchr(b'\t', black_box(test_line))
-        });
+        b.iter(|| memchr::memchr(b'\t', black_box(test_line)));
     });
 
     group.bench_function("std_find", |b| {

@@ -1,10 +1,10 @@
 //! Pattern matching with parallel filtering
 
+use crate::error::Result;
+use crate::interner::StringInterner;
+use crate::types::ChangedFile;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use rayon::prelude::*;
-use crate::types::ChangedFile;
-use crate::interner::StringInterner;
-use crate::error::Result;
 
 /// Pattern matcher with precompiled glob patterns
 pub struct PatternMatcher {
@@ -15,11 +15,7 @@ pub struct PatternMatcher {
 
 impl PatternMatcher {
     /// Create a new pattern matcher
-    pub fn new(
-        includes: &[&str],
-        excludes: &[&str],
-        negation_first: bool,
-    ) -> Result<Self> {
+    pub fn new(includes: &[&str], excludes: &[&str], negation_first: bool) -> Result<Self> {
         let mut include_builder = GlobSetBuilder::new();
         for pattern in includes {
             include_builder.add(Glob::new(pattern)?);
@@ -79,11 +75,7 @@ mod tests {
 
     #[test]
     fn test_basic_matching() {
-        let matcher = PatternMatcher::new(
-            &["**/*.rs"],
-            &[],
-            false,
-        ).unwrap();
+        let matcher = PatternMatcher::new(&["**/*.rs"], &[], false).unwrap();
 
         assert!(matcher.matches_sync("src/main.rs"));
         assert!(matcher.matches_sync("lib/mod.rs"));
@@ -92,11 +84,7 @@ mod tests {
 
     #[test]
     fn test_exclusion() {
-        let matcher = PatternMatcher::new(
-            &["**/*.rs"],
-            &["**/test_*.rs"],
-            false,
-        ).unwrap();
+        let matcher = PatternMatcher::new(&["**/*.rs"], &["**/test_*.rs"], false).unwrap();
 
         assert!(matcher.matches_sync("src/main.rs"));
         assert!(!matcher.matches_sync("src/test_utils.rs"));

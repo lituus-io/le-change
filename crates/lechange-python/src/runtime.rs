@@ -19,9 +19,10 @@ pub fn get_runtime() -> PyResult<Arc<Runtime>> {
                 .build()
                 .map(Arc::new)
                 .map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                        format!("Failed to initialize Tokio runtime: {}", e)
-                    )
+                    PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                        "Failed to initialize Tokio runtime: {}",
+                        e
+                    ))
                 })
         })
         .cloned()
@@ -38,10 +39,12 @@ where
     // Release GIL during blocking operation to allow other Python threads
     Python::with_gil(|py| {
         py.allow_threads(|| {
-            runtime.block_on(future)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                    format!("Async operation failed: {}", e)
+            runtime.block_on(future).map_err(|e| {
+                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                    "Async operation failed: {}",
+                    e
                 ))
+            })
         })
     })
 }

@@ -66,7 +66,8 @@ impl FileOps {
         }
 
         // Check disk with tokio::fs
-        let metadata = tokio::fs::symlink_metadata(&path_buf).await
+        let metadata = tokio::fs::symlink_metadata(&path_buf)
+            .await
             .map_err(|e| Error::Io(e))?;
 
         let is_link = metadata.file_type().is_symlink();
@@ -93,8 +94,7 @@ impl FileOps {
         }
 
         // Check disk with std::fs
-        let metadata = std::fs::symlink_metadata(&path_buf)
-            .map_err(|e| Error::Io(e))?;
+        let metadata = std::fs::symlink_metadata(&path_buf).map_err(|e| Error::Io(e))?;
 
         let is_link = metadata.file_type().is_symlink();
 
