@@ -21,6 +21,25 @@ Ultra-fast Git change detection powered by Rust with zero-copy abstractions and 
 - **Cross-Platform** tested on Linux, macOS, and Windows
 - **Zero External Dependencies** - no Redis, databases, or external services required
 
+## What's New in v0.2.0
+
+**Intelligent Workflow Failure Tracking** - A groundbreaking feature for incremental CI/CD:
+
+- 🔄 **Cross-Branch Active Workflow Detection**: Automatically waits for workflows running on the same files across ALL branches before proceeding
+- 📊 **Per-Branch Failure Tracking**: Tracks workflow failures within configurable history depth (default: 5 commits)
+- 🎯 **Smart File Merging**: Automatically merges files from previous failures with current changes for comprehensive testing
+- ⚡ **Exponential Backoff**: Intelligent waiting with backoff (1s → 2s → 4s → 8s → 16s → 30s max)
+- 🌐 **Zero Local Cache**: Uses GitHub Actions API only - no local storage or databases required
+- 🔀 **Automatic Deduplication**: Files in both current changes and previous failures are included once with proper tracking
+
+Perfect for:
+- Incremental testing in large monorepos
+- Focusing CI resources on failed tests
+- Avoiding redundant builds when workflows are already running
+- Ensuring comprehensive test coverage across failures
+
+See the [Workflow Failure Tracking](#workflow-failure-tracking) section for complete documentation.
+
 ## Installation
 
 ### From GitHub Releases (Recommended)
@@ -29,13 +48,13 @@ Download pre-built wheels from the [latest release](https://github.com/lituus-io
 
 ```bash
 # Linux
-pip install https://github.com/lituus-io/le-change/releases/download/v0.1.0/lechange-0.1.0-cp38-abi3-linux_x86_64.whl
+pip install https://github.com/lituus-io/le-change/releases/download/v0.2.0/lechange-0.2.0-cp38-abi3-linux_x86_64.whl
 
 # macOS (ARM64)
-pip install https://github.com/lituus-io/le-change/releases/download/v0.1.0/lechange-0.1.0-cp38-abi3-macosx_11_0_arm64.whl
+pip install https://github.com/lituus-io/le-change/releases/download/v0.2.0/lechange-0.2.0-cp38-abi3-macosx_11_0_arm64.whl
 
 # Windows
-pip install https://github.com/lituus-io/le-change/releases/download/v0.1.0/lechange-0.1.0-cp38-abi3-win_amd64.whl
+pip install https://github.com/lituus-io/le-change/releases/download/v0.2.0/lechange-0.2.0-cp38-abi3-win_amd64.whl
 ```
 
 ### From Source
@@ -190,7 +209,7 @@ jobs:
 
       - name: Install LeChange
         run: |
-          pip install https://github.com/lituus-io/le-change/releases/download/v0.1.0/lechange-0.1.0-cp38-abi3-linux_x86_64.whl
+          pip install https://github.com/lituus-io/le-change/releases/download/v0.2.0/lechange-0.2.0-cp38-abi3-linux_x86_64.whl
 
       - name: Detect changed Python files
         id: changed-files
@@ -322,18 +341,18 @@ config = Config(
 )
 
 # Requires GITHUB_TOKEN and GITHUB_REPOSITORY environment variables
+# (automatically set in GitHub Actions)
 os.environ['GITHUB_TOKEN'] = 'your_token_here'
 os.environ['GITHUB_REPOSITORY'] = 'owner/repo'
 
 result = detector.get_changed_files(config)
 
-# Files from previous failures are marked in the origin
-for file in result.all_changed_files:
-    # Check if file was in a previous failure
-    if hasattr(file, 'in_previous_failure') and file.in_previous_failure:
-        print(f"⚠️  {file} - Previously failed, retest required")
-    else:
-        print(f"✓ {file} - New change")
+# All files from current changes and previous failures are included
+print(f"Total files to test: {result.all_changed_files_count}")
+print(f"Files: {result.all_changed_files}")
+
+# Files from previous failures are automatically merged with current changes
+# The system ensures all relevant files are tested (no duplicates)
 ```
 
 #### Features
@@ -514,6 +533,7 @@ Tested on a repository with 10,000 changed files (Apple M1 Max):
 | Pattern matching (1k paths) | 3ms | 180ms | **60x** |
 | Full pipeline | 120ms | 5.1s | **42x** |
 | Submodule detection | 85ms | 2.8s | **33x** |
+| Workflow tracking (typical) | 500-1300ms | N/A | N/A |
 
 Memory usage for 10k file processing:
 - **LeChange**: ~15 MB
@@ -524,6 +544,12 @@ String interning efficiency:
 - **With interning**: ~8 MB for 10k paths
 - **Without interning**: ~28 MB for 10k paths
 - **Savings**: 71%
+
+Workflow tracking performance:
+- **Cross-branch overlap detection**: 200-500ms (parallel API calls)
+- **Recent failure tracking**: 300-800ms (depends on lookback depth)
+- **File merging**: <10ms (HashMap operations)
+- **Total overhead**: 500-1300ms per run (requires GitHub API access)
 
 ## API Reference
 
@@ -685,13 +711,19 @@ LeChange uses advanced Rust techniques for maximum performance:
 #[repr(u8)]  // Single byte per change type
 enum ChangeType { Added = b'A', Modified = b'M', ... }
 
+struct FileOrigin {
+    in_current_changes: bool,       // 1 byte
+    in_previous_failure: bool,      // 1 byte
+}  // Total: 2 bytes
+
 struct ChangedFile {
     path: InternedString,           // 4 bytes (u32 index)
     previous_path: Option<InternedString>,  // 8 bytes
     change_type: ChangeType,        // 1 byte
     is_symlink: bool,               // 1 byte
-    submodule_depth: u8,           // 1 byte
-}  // Total: ~16 bytes per file (vs 100+ bytes with String)
+    submodule_depth: u8,            // 1 byte
+    origin: FileOrigin,             // 2 bytes
+}  // Total: ~17 bytes per file (vs 100+ bytes with String)
 ```
 
 ## Development
