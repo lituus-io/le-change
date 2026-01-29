@@ -58,6 +58,13 @@ pub struct PyConfig {
     pub recover_deleted_files: bool,
     pub exclude_symlinks: bool,
     pub sha256: Option<String>,
+
+    // Workflow failure tracking configuration
+    pub track_workflow_failures: bool,
+    pub workflow_lookback_commits: u32,
+    pub wait_for_active_workflows: bool,
+    pub workflow_max_wait_seconds: u32,
+    pub include_failed_files: bool,
 }
 
 #[pymethods]
@@ -97,7 +104,12 @@ impl PyConfig {
         match_gitignore_files=None,
         recover_deleted_files=None,
         exclude_symlinks=None,
-        sha256=None
+        sha256=None,
+        track_workflow_failures=None,
+        workflow_lookback_commits=None,
+        wait_for_active_workflows=None,
+        workflow_max_wait_seconds=None,
+        include_failed_files=None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -135,6 +147,11 @@ impl PyConfig {
         recover_deleted_files: Option<bool>,
         exclude_symlinks: Option<bool>,
         sha256: Option<String>,
+        track_workflow_failures: Option<bool>,
+        workflow_lookback_commits: Option<u32>,
+        wait_for_active_workflows: Option<bool>,
+        workflow_max_wait_seconds: Option<u32>,
+        include_failed_files: Option<bool>,
     ) -> Self {
         Self {
             base_sha,
@@ -171,6 +188,11 @@ impl PyConfig {
             recover_deleted_files: recover_deleted_files.unwrap_or(false),
             exclude_symlinks: exclude_symlinks.unwrap_or(false),
             sha256,
+            track_workflow_failures: track_workflow_failures.unwrap_or(false),
+            workflow_lookback_commits: workflow_lookback_commits.unwrap_or(5),
+            wait_for_active_workflows: wait_for_active_workflows.unwrap_or(true),
+            workflow_max_wait_seconds: workflow_max_wait_seconds.unwrap_or(300),
+            include_failed_files: include_failed_files.unwrap_or(true),
         }
     }
 
@@ -229,6 +251,11 @@ impl PyConfig {
             recover_deleted_files: self.recover_deleted_files,
             exclude_symlinks: self.exclude_symlinks,
             sha256: self.sha256.as_ref().map(|s| Cow::Owned(s.clone())),
+            track_workflow_failures: self.track_workflow_failures,
+            workflow_lookback_commits: self.workflow_lookback_commits,
+            wait_for_active_workflows: self.wait_for_active_workflows,
+            workflow_max_wait_seconds: self.workflow_max_wait_seconds,
+            include_failed_files: self.include_failed_files,
         }
     }
 }
