@@ -8,8 +8,7 @@ use crate::types::{
     WorkflowConclusion, WorkflowFailure, WorkflowJob, WorkflowRun, WorkflowStatus,
     WorkflowSuccess,
 };
-use futures::future::try_join_all;
-use rayon::prelude::*;
+use futures::future::{join_all, try_join_all};
 use std::collections::{HashMap, HashSet};
 
 /// Workflow tracker for failure detection, success tracking, and active workflow coordination
@@ -128,26 +127,21 @@ impl<'a> WorkflowTracker<'a> {
         let current_paths: HashSet<InternedString> =
             current_files.iter().map(|f| f.path).collect();
 
-        // Fetch commit files for each workflow in parallel
-        let api_client = &self.api_client;
-        let interner = self.interner;
-
-        // Use Rayon for parallel processing
-        let overlapping: Vec<WorkflowRun> = workflows
-            .par_iter()
-            .filter_map(|workflow| {
-                // Create a Tokio runtime for this thread
-                let rt = tokio::runtime::Runtime::new().ok()?;
-
-                // Fetch commit files
-                let sha = interner.resolve(workflow.head_sha)?;
-                let files = rt
-                    .block_on(api_client.get_commit_files(owner, repo, sha, interner))
+        // Fetch commit files for each workflow concurrently
+        let futures: Vec<_> = workflows
+            .iter()
+            .map(|workflow| async {
+                let sha = match self.interner.resolve(workflow.head_sha) {
+                    Some(s) => s,
+                    None => return None,
+                };
+                let files = self
+                    .api_client
+                    .get_commit_files(owner, repo, sha, self.interner)
+                    .await
                     .ok()?;
 
-                // Check for overlap
                 let has_overlap = files.iter().any(|f| current_paths.contains(f));
-
                 if has_overlap {
                     Some(workflow.clone())
                 } else {
@@ -155,6 +149,9 @@ impl<'a> WorkflowTracker<'a> {
                 }
             })
             .collect();
+
+        let results = join_all(futures).await;
+        let overlapping: Vec<WorkflowRun> = results.into_iter().flatten().collect();
 
         Ok(overlapping)
     }
@@ -224,25 +221,26 @@ impl<'a> WorkflowTracker<'a> {
             return Ok(vec![]);
         }
 
-        // Fetch commit files (and optionally jobs) for each failure in parallel
-        let api_client = &self.api_client;
-        let interner = self.interner;
+        // Fetch commit files (and optionally jobs) for each failure concurrently
         let track_jobs = self.config.track_job_level;
 
-        let failure_results: Vec<WorkflowFailure> = failures
-            .par_iter()
-            .filter_map(|run| {
-                let rt = tokio::runtime::Runtime::new().ok()?;
-
-                // Fetch commit files
-                let sha = interner.resolve(run.head_sha)?;
-                let files = rt
-                    .block_on(api_client.get_commit_files(owner, repo, sha, interner))
+        let futures: Vec<_> = failures
+            .iter()
+            .map(|run| async move {
+                let sha = match self.interner.resolve(run.head_sha) {
+                    Some(s) => s,
+                    None => return None,
+                };
+                let files = self
+                    .api_client
+                    .get_commit_files(owner, repo, sha, self.interner)
+                    .await
                     .ok()?;
 
-                // Optionally fetch job-level details
                 let failed_jobs = if track_jobs {
-                    rt.block_on(api_client.list_workflow_jobs(owner, repo, run.id, interner))
+                    self.api_client
+                        .list_workflow_jobs(owner, repo, run.id, self.interner)
+                        .await
                         .ok()
                         .map(|jobs| {
                             jobs.into_iter()
@@ -261,6 +259,9 @@ impl<'a> WorkflowTracker<'a> {
                 })
             })
             .collect();
+
+        let results = join_all(futures).await;
+        let failure_results: Vec<WorkflowFailure> = results.into_iter().flatten().collect();
 
         Ok(failure_results)
     }
@@ -302,24 +303,25 @@ impl<'a> WorkflowTracker<'a> {
             return Ok(vec![]);
         }
 
-        let api_client = &self.api_client;
-        let interner = self.interner;
         let track_jobs = self.config.track_job_level;
 
-        let success_results: Vec<WorkflowSuccess> = successes
-            .par_iter()
-            .filter_map(|run| {
-                let rt = tokio::runtime::Runtime::new().ok()?;
-
-                // Fetch commit files
-                let sha = interner.resolve(run.head_sha)?;
-                let files = rt
-                    .block_on(api_client.get_commit_files(owner, repo, sha, interner))
+        let futures: Vec<_> = successes
+            .iter()
+            .map(|run| async move {
+                let sha = match self.interner.resolve(run.head_sha) {
+                    Some(s) => s,
+                    None => return None,
+                };
+                let files = self
+                    .api_client
+                    .get_commit_files(owner, repo, sha, self.interner)
+                    .await
                     .ok()?;
 
-                // Optionally fetch job details
                 let jobs = if track_jobs {
-                    rt.block_on(api_client.list_workflow_jobs(owner, repo, run.id, interner))
+                    self.api_client
+                        .list_workflow_jobs(owner, repo, run.id, self.interner)
+                        .await
                         .ok()
                         .unwrap_or_default()
                 } else {
@@ -333,6 +335,9 @@ impl<'a> WorkflowTracker<'a> {
                 })
             })
             .collect();
+
+        let results = join_all(futures).await;
+        let success_results: Vec<WorkflowSuccess> = results.into_iter().flatten().collect();
 
         Ok(success_results)
     }
