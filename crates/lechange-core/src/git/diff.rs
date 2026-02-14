@@ -45,6 +45,7 @@ impl<'a> DiffParser<'a> {
                     origin: crate::types::FileOrigin {
                         in_current_changes: true,
                         in_previous_failure: false,
+                        in_previous_success: false,
                     },
                 })
             }
@@ -61,6 +62,7 @@ impl<'a> DiffParser<'a> {
                     origin: crate::types::FileOrigin {
                         in_current_changes: true,
                         in_previous_failure: false,
+                        in_previous_success: false,
                     },
                 })
             }

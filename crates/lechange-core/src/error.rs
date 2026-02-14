@@ -38,6 +38,18 @@ pub enum Error {
     /// API rate limit exceeded
     RateLimitExceeded(String),
 
+    /// File recovery error
+    Recovery(String),
+
+    /// YAML parsing error
+    Yaml(String),
+
+    /// GitHub event parsing error
+    EventParse(String),
+
+    /// Shallow clone depth exhausted
+    ShallowExhausted(String),
+
     /// Other errors
     Other(String),
 }
@@ -55,6 +67,10 @@ impl fmt::Display for Error {
             Error::Workflow(msg) => write!(f, "Workflow error: {}", msg),
             Error::WorkflowTimeout(msg) => write!(f, "Workflow timeout: {}", msg),
             Error::RateLimitExceeded(msg) => write!(f, "Rate limit exceeded: {}", msg),
+            Error::Recovery(msg) => write!(f, "Recovery error: {}", msg),
+            Error::Yaml(msg) => write!(f, "YAML error: {}", msg),
+            Error::EventParse(msg) => write!(f, "Event parse error: {}", msg),
+            Error::ShallowExhausted(msg) => write!(f, "Shallow clone exhausted: {}", msg),
             Error::Other(msg) => write!(f, "Error: {}", msg),
         }
     }
@@ -99,6 +115,12 @@ impl From<serde_json::Error> for Error {
     }
 }
 
+impl From<serde_yaml::Error> for Error {
+    fn from(err: serde_yaml::Error) -> Self {
+        Error::Yaml(err.to_string())
+    }
+}
+
 /// Error category for pattern matching
 #[derive(Debug)]
 pub enum ErrorKind {
@@ -128,6 +150,10 @@ impl Error {
             Error::Workflow(msg) => ErrorKind::Runtime(msg.clone()),
             Error::WorkflowTimeout(msg) => ErrorKind::Runtime(msg.clone()),
             Error::RateLimitExceeded(msg) => ErrorKind::Runtime(msg.clone()),
+            Error::Recovery(msg) => ErrorKind::Runtime(msg.clone()),
+            Error::Yaml(msg) => ErrorKind::Config(msg.clone()),
+            Error::EventParse(msg) => ErrorKind::Config(msg.clone()),
+            Error::ShallowExhausted(msg) => ErrorKind::Git(msg.clone()),
             Error::Other(msg) => ErrorKind::Runtime(msg.clone()),
         }
     }

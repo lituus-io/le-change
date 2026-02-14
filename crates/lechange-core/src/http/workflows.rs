@@ -2,7 +2,7 @@
 
 use crate::error::{Error, Result};
 use crate::interner::StringInterner;
-use crate::types::{InternedString, WorkflowConclusion, WorkflowRun, WorkflowStatus};
+use crate::types::{InternedString, WorkflowConclusion, WorkflowJob, WorkflowRun, WorkflowStatus};
 use serde::Deserialize;
 
 /// GitHub API response for workflow runs list
@@ -23,6 +23,27 @@ struct GitHubWorkflowRun {
     head_branch: String,
     head_sha: String,
     created_at: String,
+}
+
+/// GitHub API response for workflow jobs list
+#[derive(Debug, Deserialize)]
+struct WorkflowJobsResponse {
+    #[allow(dead_code)]
+    total_count: u32,
+    jobs: Vec<GitHubWorkflowJob>,
+}
+
+/// GitHub API job object
+#[derive(Debug, Deserialize)]
+struct GitHubWorkflowJob {
+    id: u64,
+    name: String,
+    status: String,
+    conclusion: Option<String>,
+    #[allow(dead_code)]
+    run_id: u64,
+    started_at: Option<String>,
+    completed_at: Option<String>,
 }
 
 /// GitHub API response for commit details
@@ -298,6 +319,97 @@ impl WorkflowApiClient {
         }
     }
 
+    /// List jobs for a workflow run
+    ///
+    /// Endpoint: GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs
+    pub async fn list_workflow_jobs(
+        &self,
+        owner: &str,
+        repo: &str,
+        run_id: u64,
+        interner: &StringInterner,
+    ) -> Result<Vec<WorkflowJob>> {
+        let url = format!(
+            "{}/repos/{}/{}/actions/runs/{}/jobs",
+            self.base_url, owner, repo, run_id
+        );
+
+        let mut request = self.client.get(&url).query(&[("per_page", "100")]);
+
+        if let Some(ref token) = self.token {
+            request = request.header("Authorization", format!("Bearer {}", token));
+        }
+
+        let response = request
+            .send()
+            .await
+            .map_err(|e| Error::Workflow(format!("Failed to fetch workflow jobs: {}", e)))?;
+
+        if !response.status().is_success() {
+            return Err(Error::Workflow(format!(
+                "GitHub API error fetching jobs: {}",
+                response.status()
+            )));
+        }
+
+        let jobs_response: WorkflowJobsResponse = response.json().await.map_err(|e| {
+            Error::Workflow(format!("Failed to parse workflow jobs response: {}", e))
+        })?;
+
+        Ok(jobs_response
+            .jobs
+            .into_iter()
+            .map(|job| self.convert_workflow_job(job, run_id, interner))
+            .collect())
+    }
+
+    /// Convert GitHub API job to our type
+    fn convert_workflow_job(
+        &self,
+        job: GitHubWorkflowJob,
+        run_id: u64,
+        interner: &StringInterner,
+    ) -> WorkflowJob {
+        let status = match job.status.as_str() {
+            "queued" => WorkflowStatus::Queued,
+            "in_progress" => WorkflowStatus::InProgress,
+            _ => WorkflowStatus::Completed,
+        };
+
+        let conclusion = job.conclusion.as_ref().map(|c| match c.as_str() {
+            "success" => WorkflowConclusion::Success,
+            "failure" => WorkflowConclusion::Failure,
+            "cancelled" => WorkflowConclusion::Cancelled,
+            "skipped" => WorkflowConclusion::Skipped,
+            "timed_out" => WorkflowConclusion::TimedOut,
+            _ => WorkflowConclusion::Neutral,
+        });
+
+        let started_at = job
+            .started_at
+            .as_ref()
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.timestamp())
+            .unwrap_or(0);
+
+        let completed_at = job
+            .completed_at
+            .as_ref()
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.timestamp())
+            .unwrap_or(0);
+
+        WorkflowJob {
+            id: job.id,
+            name: interner.intern(&job.name),
+            status,
+            conclusion,
+            run_id,
+            started_at,
+            completed_at,
+        }
+    }
+
     /// Convert GitHub API workflow run to our type
     fn convert_workflow_run(
         &self,
@@ -394,5 +506,72 @@ mod tests {
         let converted = client.convert_workflow_run(run, &interner);
         assert_eq!(converted.status, WorkflowStatus::Completed);
         assert_eq!(converted.conclusion, Some(WorkflowConclusion::Failure));
+    }
+
+    #[test]
+    fn test_convert_workflow_job_success() {
+        let interner = StringInterner::new();
+        let client = WorkflowApiClient::new("https://api.github.com".to_string(), None);
+
+        let job = GitHubWorkflowJob {
+            id: 100,
+            name: "build".to_string(),
+            status: "completed".to_string(),
+            conclusion: Some("success".to_string()),
+            run_id: 1,
+            started_at: Some("2024-01-01T10:00:00Z".to_string()),
+            completed_at: Some("2024-01-01T10:05:00Z".to_string()),
+        };
+
+        let converted = client.convert_workflow_job(job, 1, &interner);
+        assert_eq!(converted.id, 100);
+        assert_eq!(converted.status, WorkflowStatus::Completed);
+        assert_eq!(converted.conclusion, Some(WorkflowConclusion::Success));
+        assert_eq!(converted.run_id, 1);
+        assert!(converted.started_at > 0);
+        assert!(converted.completed_at > 0);
+        assert!(converted.completed_at > converted.started_at);
+        assert_eq!(interner.resolve(converted.name), Some("build"));
+    }
+
+    #[test]
+    fn test_convert_workflow_job_failure() {
+        let interner = StringInterner::new();
+        let client = WorkflowApiClient::new("https://api.github.com".to_string(), None);
+
+        let job = GitHubWorkflowJob {
+            id: 200,
+            name: "test".to_string(),
+            status: "completed".to_string(),
+            conclusion: Some("failure".to_string()),
+            run_id: 2,
+            started_at: Some("2024-01-01T10:00:00Z".to_string()),
+            completed_at: Some("2024-01-01T10:03:00Z".to_string()),
+        };
+
+        let converted = client.convert_workflow_job(job, 2, &interner);
+        assert_eq!(converted.conclusion, Some(WorkflowConclusion::Failure));
+    }
+
+    #[test]
+    fn test_convert_workflow_job_no_timestamps() {
+        let interner = StringInterner::new();
+        let client = WorkflowApiClient::new("https://api.github.com".to_string(), None);
+
+        let job = GitHubWorkflowJob {
+            id: 300,
+            name: "pending".to_string(),
+            status: "queued".to_string(),
+            conclusion: None,
+            run_id: 3,
+            started_at: None,
+            completed_at: None,
+        };
+
+        let converted = client.convert_workflow_job(job, 3, &interner);
+        assert_eq!(converted.started_at, 0);
+        assert_eq!(converted.completed_at, 0);
+        assert_eq!(converted.status, WorkflowStatus::Queued);
+        assert_eq!(converted.conclusion, None);
     }
 }

@@ -79,6 +79,10 @@ addopts = [
     "--cov-report=xml",
 ]
 asyncio_mode = "auto"
+markers = [
+    "workflow_api: tests requiring GITHUB_TOKEN and network",
+    "real_repo: tests using le-change-test repo",
+]
 
 [tool.coverage.run]
 source = ["python/lechange"]

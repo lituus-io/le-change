@@ -33,10 +33,10 @@ def test_config_creation():
 def test_config_with_parameters():
     """Test Config creation with parameters."""
     config = Config(
-        base="main",
-        head="HEAD",
+        base_sha="main",
+        sha="HEAD",
         files=["**/*.py"],
-        json=True
+        json=True,
     )
     assert config is not None
 
@@ -47,24 +47,15 @@ def test_detector_creation():
     assert detector is not None
 
 
-@pytest.mark.skipif(True, reason="Requires git repository setup")
-def test_basic_detection():
-    """Test basic change detection (requires git repo)."""
+def test_detector_repr():
+    """Test ChangeDetector repr."""
     detector = ChangeDetector(".")
-    config = Config(base="HEAD^", head="HEAD")
-    result = detector.get_changed_files(config)
-
-    assert result is not None
-    assert hasattr(result, "all_changed_files")
-    assert hasattr(result, "any_changed")
+    r = repr(detector)
+    assert "ChangeDetector" in r
 
 
-@pytest.mark.asyncio
-@pytest.mark.skipif(True, reason="Requires git repository setup")
-async def test_async_detection():
-    """Test async change detection (requires git repo)."""
-    detector = ChangeDetector(".")
-    config = Config(base="HEAD^", head="HEAD")
-    result = await detector.get_changed_files_async(config)
-
-    assert result is not None
+def test_config_repr():
+    """Test Config repr."""
+    config = Config()
+    r = repr(config)
+    assert "Config" in r

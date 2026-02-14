@@ -31,6 +31,7 @@ fn generate_realistic_diff_result(num_files: usize, interner: &StringInterner) -
             change_type,
             is_symlink: i % 50 == 0,                           // 2% symlinks
             submodule_depth: if i % 100 == 0 { 1 } else { 0 }, // 1% in submodules
+            origin: Default::default(),
         });
     }
 
@@ -59,17 +60,17 @@ fn bench_full_pipeline(c: &mut Criterion) {
                     let pattern_refs: Vec<&str> = patterns.iter().map(|s| s.as_ref()).collect();
                     let matcher = PatternMatcher::new(&pattern_refs, &[], false).unwrap();
 
-                    // Filter by patterns
-                    let filtered =
-                        matcher.filter_files_parallel(black_box(&diff_result.files), &interner);
+                    // Filter by patterns (returns index-based partitions)
+                    let (matched, unmatched) =
+                        matcher.partition_files_parallel(black_box(&diff_result.files), &interner);
 
-                    // Group by change type
+                    // Group by change type using indices
                     let mut added = 0;
                     let mut modified = 0;
                     let mut deleted = 0;
 
-                    for file in &filtered {
-                        match file.change_type {
+                    for &idx in &matched {
+                        match diff_result.files[idx as usize].change_type {
                             ChangeType::Added => added += 1,
                             ChangeType::Modified => modified += 1,
                             ChangeType::Deleted => deleted += 1,
@@ -77,7 +78,7 @@ fn bench_full_pipeline(c: &mut Criterion) {
                         }
                     }
 
-                    black_box((filtered, added, modified, deleted))
+                    black_box((matched, unmatched, added, modified, deleted))
                 });
             },
         );
@@ -255,7 +256,7 @@ fn bench_parallel_pattern_filtering(c: &mut Criterion) {
             BenchmarkId::from_parameter(size),
             &diff_result.files,
             |b, files| {
-                b.iter(|| matcher.filter_files_parallel(black_box(files), &interner));
+                b.iter(|| matcher.partition_files_parallel(black_box(files), &interner));
             },
         );
     }

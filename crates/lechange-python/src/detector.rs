@@ -3,6 +3,7 @@
 use crate::config::PyConfig;
 use crate::result::PyChangedFiles;
 use crate::runtime::block_on_runtime;
+use lechange_core::output::computed::ComputedOutputs;
 use lechange_core::StringInterner;
 use pyo3::prelude::*;
 use std::path::PathBuf;
@@ -36,6 +37,7 @@ impl PyChangeDetector {
         let repo_path = self.repo_path.clone();
         let core_config = config.to_core_config();
         let json = config.json;
+        let use_posix = config.use_posix_path_separator;
 
         // Execute the detection
         let result = block_on_runtime(async move {
@@ -57,13 +59,19 @@ impl PyChangeDetector {
                 &core_config,
             );
 
-            let diff = processor.process().await?;
+            let processed = processor.process().await?;
 
-            Ok((diff, interner))
+            // Compute derived outputs (with rename splitting support)
+            let outputs = ComputedOutputs::compute(
+                &processed,
+                core_config.output_renamed_as_deleted_added,
+            );
+
+            Ok((processed, outputs, interner))
         })?;
 
-        let (diff, interner) = result;
-        Ok(PyChangedFiles::from_core(diff, &interner, json))
+        let (processed, outputs, interner) = result;
+        Ok(PyChangedFiles::from_core(processed, &outputs, &interner, json, use_posix))
     }
 
     fn __repr__(&self) -> String {

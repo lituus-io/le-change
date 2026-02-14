@@ -1,7 +1,16 @@
 #![no_main]
 use libfuzzer_sys::fuzz_target;
+use lechange_core::ChangeType;
 
 fuzz_target!(|data: &[u8]| {
-    // TODO: Implement fuzz target
-    let _ = data;
+    // Fuzz ChangeType::from_byte with arbitrary bytes
+    for &byte in data {
+        let _ = ChangeType::from_byte(byte);
+    }
+    // Fuzz diff filter parsing via string
+    if let Ok(s) = std::str::from_utf8(data) {
+        for ch in s.bytes() {
+            let _ = ChangeType::from_byte(ch);
+        }
+    }
 });

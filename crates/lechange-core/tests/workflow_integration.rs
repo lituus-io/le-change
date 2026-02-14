@@ -173,6 +173,7 @@ async fn test_workflow_tracker_basic() {
         origin: FileOrigin {
             in_current_changes: true,
             in_previous_failure: false,
+            in_previous_success: false,
         },
     }];
 
@@ -227,6 +228,7 @@ async fn test_workflow_tracker_file_merging() {
             origin: FileOrigin {
                 in_current_changes: true,
                 in_previous_failure: false,
+                in_previous_success: false,
             },
         },
         ChangedFile {
@@ -238,6 +240,7 @@ async fn test_workflow_tracker_file_merging() {
             origin: FileOrigin {
                 in_current_changes: true,
                 in_previous_failure: false,
+                in_previous_success: false,
             },
         },
     ];
@@ -254,6 +257,7 @@ async fn test_workflow_tracker_file_merging() {
             created_at: 0,
         },
         files: vec![path2, path3], // path2 overlaps, path3 is new
+        failed_jobs: Vec::new(),
     }];
 
     // Merge files
@@ -312,16 +316,16 @@ async fn test_full_pipeline_with_workflow_tracking() {
 
     assert!(result.is_ok(), "Pipeline failed: {:?}", result.err());
 
-    let diff = result.unwrap();
+    let processed = result.unwrap();
     println!("Pipeline completed successfully!");
-    println!("Total files: {}", diff.files.len());
+    println!("Total files: {}", processed.all_files.len());
 
     // Check origin flags
     let mut current_count = 0;
     let mut failed_count = 0;
     let mut both_count = 0;
 
-    for file in &diff.files {
+    for file in &processed.all_files {
         if file.origin.in_current_changes && file.origin.in_previous_failure {
             both_count += 1;
         } else if file.origin.in_current_changes {

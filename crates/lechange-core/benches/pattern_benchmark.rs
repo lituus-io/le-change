@@ -100,12 +100,13 @@ fn bench_bulk_filtering(c: &mut Criterion) {
                 change_type: lechange_core::types::ChangeType::Modified,
                 is_symlink: false,
                 submodule_depth: 0,
+                origin: Default::default(),
             })
             .collect();
 
         group.throughput(Throughput::Elements(count as u64));
         group.bench_with_input(BenchmarkId::from_parameter(count), &files, |b, files| {
-            b.iter(|| matcher.filter_files_parallel(black_box(files), &interner));
+            b.iter(|| matcher.partition_files_parallel(black_box(files), &interner));
         });
     }
 
@@ -131,6 +132,7 @@ fn bench_sequential_vs_parallel(c: &mut Criterion) {
                 change_type: lechange_core::types::ChangeType::Modified,
                 is_symlink: false,
                 submodule_depth: 0,
+                origin: Default::default(),
             })
             .collect();
 
@@ -154,7 +156,7 @@ fn bench_sequential_vs_parallel(c: &mut Criterion) {
 
         // Parallel benchmark
         group.bench_with_input(BenchmarkId::new("parallel", count), &files, |b, files| {
-            b.iter(|| matcher.filter_files_parallel(black_box(files), &interner));
+            b.iter(|| matcher.partition_files_parallel(black_box(files), &interner));
         });
     }
 

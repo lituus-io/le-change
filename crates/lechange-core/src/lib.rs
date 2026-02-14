@@ -23,7 +23,7 @@
 //! };
 //!
 //! let result = detect_changes(config).await?;
-//! println!("Changed files: {}", result.files.len());
+//! println!("Changed files: {}", result.all_files.len());
 //! # Ok(())
 //! # }
 //! ```
@@ -38,6 +38,7 @@ pub mod file_ops;
 pub mod git;
 pub mod http;
 pub mod interner;
+pub mod output;
 pub mod patterns;
 pub mod platform;
 pub mod traits;
@@ -45,7 +46,9 @@ pub mod types;
 
 pub use error::{Error, Result};
 pub use interner::StringInterner;
-pub use types::{ChangeType, ChangedFile, DiffResult, InputConfig, InternedString};
+pub use types::{
+    ChangeType, ChangedFile, CiDecision, DiffResult, InputConfig, InternedString, ProcessedResult,
+};
 
 /// Detect changed files between two git references
 ///
@@ -55,6 +58,10 @@ pub use types::{ChangeType, ChangedFile, DiffResult, InputConfig, InternedString
 /// - Pattern filtering
 /// - Submodule processing
 /// - Symlink detection
+/// - Workflow intelligence
+///
+/// Returns a `ProcessedResult` with index-based partitioning for both
+/// filtered and unfiltered file sets.
 ///
 /// # Example
 ///
@@ -70,11 +77,11 @@ pub use types::{ChangeType, ChangedFile, DiffResult, InputConfig, InternedString
 /// };
 ///
 /// let result = detect_changes(config).await?;
-/// println!("Files changed: {}", result.files.len());
+/// println!("Files changed: {}", result.all_files.len());
 /// # Ok(())
 /// # }
 /// ```
-pub async fn detect_changes(config: InputConfig<'_>) -> Result<DiffResult> {
+pub async fn detect_changes(config: InputConfig<'_>) -> Result<ProcessedResult> {
     // Initialize string interner with reasonable capacity
     let interner = StringInterner::with_capacity(2048);
 
@@ -97,7 +104,7 @@ pub async fn detect_changes(config: InputConfig<'_>) -> Result<DiffResult> {
 ///
 /// This creates a new Tokio runtime and blocks on the async version.
 /// Prefer the async version if you're already in an async context.
-pub fn detect_changes_sync(config: InputConfig<'_>) -> Result<DiffResult> {
+pub fn detect_changes_sync(config: InputConfig<'_>) -> Result<ProcessedResult> {
     tokio::runtime::Runtime::new()
         .map_err(|e| Error::Runtime(e.to_string()))?
         .block_on(detect_changes(config))

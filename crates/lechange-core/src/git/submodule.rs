@@ -231,6 +231,7 @@ impl SubmoduleProcessor {
                         origin: crate::types::FileOrigin {
                             in_current_changes: true,
                             in_previous_failure: false,
+                            in_previous_success: false,
                         },
                     });
                 }

@@ -19,6 +19,12 @@ pub struct PyConfig {
     pub files_ignore: Option<Vec<String>>,
     pub files_ignore_separator: String,
 
+    // YAML patterns
+    pub files_yaml: Option<String>,
+    pub files_yaml_from_source_file: Option<String>,
+    pub files_from_source_file: Option<String>,
+    pub files_from_source_file_separator: String,
+
     // Diff configuration
     pub diff_filter: String,
     pub include_all_old_new_renamed_files: bool,
@@ -30,6 +36,11 @@ pub struct PyConfig {
     pub dir_names_max_depth: Option<u32>,
     pub quotepath: bool,
     pub path_separator: String,
+
+    // Directory extras
+    pub dir_names_exclude_current_dir: bool,
+    pub dir_names_include_files: Option<Vec<String>>,
+    pub dir_names_deleted_files_include_only_deleted_dirs: bool,
 
     // Submodule configuration
     pub include_submodules: bool,
@@ -57,7 +68,19 @@ pub struct PyConfig {
     pub match_gitignore_files: bool,
     pub recover_deleted_files: bool,
     pub exclude_symlinks: bool,
-    pub sha256: Option<String>,
+
+    // Tag comparison
+    pub tags_pattern: Option<String>,
+    pub tags_ignore_pattern: Option<String>,
+
+    // Soft-fail
+    pub fail_on_initial_diff_error: bool,
+    pub fail_on_submodule_diff_error: bool,
+    pub skip_same_sha: bool,
+
+    // Rename splitting / POSIX
+    pub output_renamed_as_deleted_added: bool,
+    pub use_posix_path_separator: bool,
 
     // Workflow failure tracking configuration
     pub track_workflow_failures: bool,
@@ -65,6 +88,12 @@ pub struct PyConfig {
     pub wait_for_active_workflows: bool,
     pub workflow_max_wait_seconds: u32,
     pub include_failed_files: bool,
+
+    // Workflow intelligence (enhanced)
+    pub track_job_level: bool,
+    pub workflow_success_lookback: u32,
+    pub skip_successful_files: bool,
+    pub workflow_name_filter: Option<String>,
 }
 
 #[pymethods]
@@ -79,6 +108,10 @@ impl PyConfig {
         files_separator=None,
         files_ignore=None,
         files_ignore_separator=None,
+        files_yaml=None,
+        files_yaml_from_source_file=None,
+        files_from_source_file=None,
+        files_from_source_file_separator=None,
         diff_filter=None,
         include_all_old_new_renamed_files=None,
         old_new_separator=None,
@@ -87,6 +120,9 @@ impl PyConfig {
         dir_names_max_depth=None,
         quotepath=None,
         path_separator=None,
+        dir_names_exclude_current_dir=None,
+        dir_names_include_files=None,
+        dir_names_deleted_files_include_only_deleted_dirs=None,
         include_submodules=None,
         submodule_filter=None,
         fetch_depth=None,
@@ -104,12 +140,22 @@ impl PyConfig {
         match_gitignore_files=None,
         recover_deleted_files=None,
         exclude_symlinks=None,
-        sha256=None,
+        tags_pattern=None,
+        tags_ignore_pattern=None,
+        fail_on_initial_diff_error=None,
+        fail_on_submodule_diff_error=None,
+        skip_same_sha=None,
+        output_renamed_as_deleted_added=None,
+        use_posix_path_separator=None,
         track_workflow_failures=None,
         workflow_lookback_commits=None,
         wait_for_active_workflows=None,
         workflow_max_wait_seconds=None,
-        include_failed_files=None
+        include_failed_files=None,
+        track_job_level=None,
+        workflow_success_lookback=None,
+        skip_successful_files=None,
+        workflow_name_filter=None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -121,6 +167,10 @@ impl PyConfig {
         files_separator: Option<String>,
         files_ignore: Option<Vec<String>>,
         files_ignore_separator: Option<String>,
+        files_yaml: Option<String>,
+        files_yaml_from_source_file: Option<String>,
+        files_from_source_file: Option<String>,
+        files_from_source_file_separator: Option<String>,
         diff_filter: Option<String>,
         include_all_old_new_renamed_files: Option<bool>,
         old_new_separator: Option<String>,
@@ -129,6 +179,9 @@ impl PyConfig {
         dir_names_max_depth: Option<u32>,
         quotepath: Option<bool>,
         path_separator: Option<String>,
+        dir_names_exclude_current_dir: Option<bool>,
+        dir_names_include_files: Option<Vec<String>>,
+        dir_names_deleted_files_include_only_deleted_dirs: Option<bool>,
         include_submodules: Option<bool>,
         submodule_filter: Option<String>,
         fetch_depth: Option<u32>,
@@ -146,12 +199,22 @@ impl PyConfig {
         match_gitignore_files: Option<bool>,
         recover_deleted_files: Option<bool>,
         exclude_symlinks: Option<bool>,
-        sha256: Option<String>,
+        tags_pattern: Option<String>,
+        tags_ignore_pattern: Option<String>,
+        fail_on_initial_diff_error: Option<bool>,
+        fail_on_submodule_diff_error: Option<bool>,
+        skip_same_sha: Option<bool>,
+        output_renamed_as_deleted_added: Option<bool>,
+        use_posix_path_separator: Option<bool>,
         track_workflow_failures: Option<bool>,
         workflow_lookback_commits: Option<u32>,
         wait_for_active_workflows: Option<bool>,
         workflow_max_wait_seconds: Option<u32>,
         include_failed_files: Option<bool>,
+        track_job_level: Option<bool>,
+        workflow_success_lookback: Option<u32>,
+        skip_successful_files: Option<bool>,
+        workflow_name_filter: Option<String>,
     ) -> Self {
         Self {
             base_sha,
@@ -162,6 +225,11 @@ impl PyConfig {
             files_separator: files_separator.unwrap_or_else(|| " ".to_string()),
             files_ignore,
             files_ignore_separator: files_ignore_separator.unwrap_or_else(|| " ".to_string()),
+            files_yaml,
+            files_yaml_from_source_file,
+            files_from_source_file,
+            files_from_source_file_separator: files_from_source_file_separator
+                .unwrap_or_else(|| "\n".to_string()),
             diff_filter: diff_filter.unwrap_or_else(|| "ACDMRTUX".to_string()),
             include_all_old_new_renamed_files: include_all_old_new_renamed_files.unwrap_or(false),
             old_new_separator: old_new_separator.unwrap_or_else(|| " ".to_string()),
@@ -170,6 +238,10 @@ impl PyConfig {
             dir_names_max_depth,
             quotepath: quotepath.unwrap_or(true),
             path_separator: path_separator.unwrap_or_else(|| " ".to_string()),
+            dir_names_exclude_current_dir: dir_names_exclude_current_dir.unwrap_or(false),
+            dir_names_include_files,
+            dir_names_deleted_files_include_only_deleted_dirs:
+                dir_names_deleted_files_include_only_deleted_dirs.unwrap_or(false),
             include_submodules: include_submodules.unwrap_or(false),
             submodule_filter,
             fetch_depth: fetch_depth.unwrap_or(0),
@@ -187,12 +259,22 @@ impl PyConfig {
             match_gitignore_files: match_gitignore_files.unwrap_or(false),
             recover_deleted_files: recover_deleted_files.unwrap_or(false),
             exclude_symlinks: exclude_symlinks.unwrap_or(false),
-            sha256,
+            tags_pattern,
+            tags_ignore_pattern,
+            fail_on_initial_diff_error: fail_on_initial_diff_error.unwrap_or(true),
+            fail_on_submodule_diff_error: fail_on_submodule_diff_error.unwrap_or(false),
+            skip_same_sha: skip_same_sha.unwrap_or(false),
+            output_renamed_as_deleted_added: output_renamed_as_deleted_added.unwrap_or(false),
+            use_posix_path_separator: use_posix_path_separator.unwrap_or(false),
             track_workflow_failures: track_workflow_failures.unwrap_or(false),
             workflow_lookback_commits: workflow_lookback_commits.unwrap_or(5),
             wait_for_active_workflows: wait_for_active_workflows.unwrap_or(true),
             workflow_max_wait_seconds: workflow_max_wait_seconds.unwrap_or(300),
             include_failed_files: include_failed_files.unwrap_or(true),
+            track_job_level: track_job_level.unwrap_or(false),
+            workflow_success_lookback: workflow_success_lookback.unwrap_or(5),
+            skip_successful_files: skip_successful_files.unwrap_or(true),
+            workflow_name_filter,
         }
     }
 
@@ -222,6 +304,18 @@ impl PyConfig {
                 .as_ref()
                 .map(|v| v.iter().map(|s| Cow::Owned(s.clone())).collect()),
             files_ignore_separator: Cow::Owned(self.files_ignore_separator.clone()),
+            files_yaml: self.files_yaml.as_ref().map(|s| Cow::Owned(s.clone())),
+            files_yaml_from_source_file: self
+                .files_yaml_from_source_file
+                .as_ref()
+                .map(|s| Cow::Owned(s.clone())),
+            files_from_source_file: self
+                .files_from_source_file
+                .as_ref()
+                .map(|s| Cow::Owned(s.clone())),
+            files_from_source_file_separator: Cow::Owned(
+                self.files_from_source_file_separator.clone(),
+            ),
             diff_filter: Cow::Owned(self.diff_filter.clone()),
             include_all_old_new_renamed_files: self.include_all_old_new_renamed_files,
             old_new_separator: Cow::Owned(self.old_new_separator.clone()),
@@ -230,6 +324,13 @@ impl PyConfig {
             dir_names_max_depth: self.dir_names_max_depth,
             quotepath: self.quotepath,
             path_separator: Cow::Owned(self.path_separator.clone()),
+            dir_names_exclude_current_dir: self.dir_names_exclude_current_dir,
+            dir_names_include_files: self
+                .dir_names_include_files
+                .as_ref()
+                .map(|v| v.iter().map(|s| Cow::Owned(s.clone())).collect()),
+            dir_names_deleted_files_include_only_deleted_dirs: self
+                .dir_names_deleted_files_include_only_deleted_dirs,
             include_submodules: self.include_submodules,
             submodule_filter: self
                 .submodule_filter
@@ -250,12 +351,28 @@ impl PyConfig {
             match_gitignore_files: self.match_gitignore_files,
             recover_deleted_files: self.recover_deleted_files,
             exclude_symlinks: self.exclude_symlinks,
-            sha256: self.sha256.as_ref().map(|s| Cow::Owned(s.clone())),
+            tags_pattern: self.tags_pattern.as_ref().map(|s| Cow::Owned(s.clone())),
+            tags_ignore_pattern: self
+                .tags_ignore_pattern
+                .as_ref()
+                .map(|s| Cow::Owned(s.clone())),
+            fail_on_initial_diff_error: self.fail_on_initial_diff_error,
+            fail_on_submodule_diff_error: self.fail_on_submodule_diff_error,
+            skip_same_sha: self.skip_same_sha,
+            output_renamed_as_deleted_added: self.output_renamed_as_deleted_added,
+            use_posix_path_separator: self.use_posix_path_separator,
             track_workflow_failures: self.track_workflow_failures,
             workflow_lookback_commits: self.workflow_lookback_commits,
             wait_for_active_workflows: self.wait_for_active_workflows,
             workflow_max_wait_seconds: self.workflow_max_wait_seconds,
             include_failed_files: self.include_failed_files,
+            track_job_level: self.track_job_level,
+            workflow_success_lookback: self.workflow_success_lookback,
+            skip_successful_files: self.skip_successful_files,
+            workflow_name_filter: self
+                .workflow_name_filter
+                .as_ref()
+                .map(|s| Cow::Owned(s.clone())),
         }
     }
 }

@@ -91,7 +91,7 @@ pub struct ChangedFile {
     pub is_symlink: bool,
     /// Submodule depth (0 = root)
     pub submodule_depth: u8,
-    /// File origin tracking (current changes vs previous failures)
+    /// File origin tracking (current changes vs previous failures vs previous successes)
     pub origin: FileOrigin,
 }
 
@@ -105,6 +105,67 @@ pub struct DiffResult {
     /// Total deletions (lines)
     pub deletions: u32,
 }
+
+/// Processed result of the full detection pipeline (index-based partitioning)
+#[derive(Debug, Default)]
+pub struct ProcessedResult {
+    /// All files from the diff (unfiltered superset)
+    pub all_files: Vec<ChangedFile>,
+    /// Indices into all_files matching pattern filter
+    pub filtered_indices: Vec<u32>,
+    /// Indices into all_files NOT matching pattern filter
+    pub unmatched_indices: Vec<u32>,
+    /// Whether a pattern filter was applied
+    pub pattern_applied: bool,
+    /// Per-YAML-group index results
+    pub group_results: Vec<GroupResult>,
+    /// Total additions (lines)
+    pub additions: u32,
+    /// Total deletions (lines)
+    pub deletions: u32,
+    /// Pipeline diagnostics (warnings, soft errors)
+    pub diagnostics: Vec<Diagnostic>,
+    /// Enhanced workflow check result
+    pub workflow_result: Option<WorkflowCheckResult>,
+    /// CI rebuild/skip decision
+    pub ci_decision: Option<CiDecision>,
+}
+
+impl ProcessedResult {
+    /// Get files matching the pattern filter
+    pub fn matched_files(&self) -> Vec<&ChangedFile> {
+        self.filtered_indices
+            .iter()
+            .map(|&i| &self.all_files[i as usize])
+            .collect()
+    }
+
+    /// Get files NOT matching the pattern filter ("other" files)
+    pub fn other_files(&self) -> Vec<&ChangedFile> {
+        self.unmatched_indices
+            .iter()
+            .map(|&i| &self.all_files[i as usize])
+            .collect()
+    }
+
+    /// Create from an unfiltered DiffResult (no pattern applied)
+    pub fn from_unfiltered(diff: DiffResult) -> Self {
+        let n = diff.files.len() as u32;
+        Self {
+            filtered_indices: (0..n).collect(),
+            unmatched_indices: Vec::new(),
+            pattern_applied: false,
+            all_files: diff.files,
+            group_results: Vec::new(),
+            additions: diff.additions,
+            deletions: diff.deletions,
+            diagnostics: Vec::new(),
+            workflow_result: None,
+            ci_decision: None,
+        }
+    }
+}
+
 
 /// Workflow run status from GitHub Actions
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -136,13 +197,15 @@ pub enum WorkflowConclusion {
     Neutral,
 }
 
-/// File origin - tracks whether a file is in current changes, failed workflows, or both
+/// File origin - tracks whether a file is in current changes, failed workflows, successful workflows, or combinations
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct FileOrigin {
     /// File is in current diff
     pub in_current_changes: bool,
     /// File was in previous workflow failure
     pub in_previous_failure: bool,
+    /// File was in a successful prior workflow
+    pub in_previous_success: bool,
 }
 
 /// Workflow run metadata (minimal, following zero-copy design)
@@ -164,12 +227,44 @@ pub struct WorkflowRun {
     pub created_at: i64,
 }
 
+/// Individual job within a workflow run
+#[derive(Debug, Clone)]
+pub struct WorkflowJob {
+    /// Job ID
+    pub id: u64,
+    /// Job name (interned)
+    pub name: InternedString,
+    /// Job status
+    pub status: WorkflowStatus,
+    /// Job conclusion (if completed)
+    pub conclusion: Option<WorkflowConclusion>,
+    /// Parent workflow run ID
+    pub run_id: u64,
+    /// Started at (Unix epoch seconds)
+    pub started_at: i64,
+    /// Completed at (Unix epoch seconds)
+    pub completed_at: i64,
+}
+
 /// Workflow failure context with affected files
 #[derive(Debug)]
 pub struct WorkflowFailure {
     /// The failed workflow run
     pub run: WorkflowRun,
     /// Files that were changed in the commit that failed
+    pub files: Vec<InternedString>,
+    /// Individual failed jobs (populated when track_job_level is true)
+    pub failed_jobs: Vec<WorkflowJob>,
+}
+
+/// Successful workflow with its verified files
+#[derive(Debug)]
+pub struct WorkflowSuccess {
+    /// The successful workflow run
+    pub run: WorkflowRun,
+    /// Individual job results (populated when track_job_level is true)
+    pub jobs: Vec<WorkflowJob>,
+    /// Files verified by this success
     pub files: Vec<InternedString>,
 }
 
@@ -180,13 +275,105 @@ pub struct WorkflowCheckResult {
     pub blocking_runs: Vec<WorkflowRun>,
     /// Recent failures on this branch
     pub failures: Vec<WorkflowFailure>,
+    /// Recent successes on this branch
+    pub successes: Vec<WorkflowSuccess>,
     /// Did we wait for blocking workflows?
     pub waited: bool,
     /// Wait time in milliseconds
     pub wait_time_ms: u64,
 }
 
-/// Configuration input - 64 parameters organized by category
+/// CI rebuild/skip decision computed from workflow analysis
+#[derive(Debug, Default)]
+pub struct CiDecision {
+    /// Files that need CI attention (current changes + previous failures - verified successes)
+    pub files_to_rebuild: Vec<InternedString>,
+    /// Files from prior commits verified as successful (skip these)
+    pub files_to_skip: Vec<InternedString>,
+    /// Job names that failed in recent workflows
+    pub failed_jobs: Vec<InternedString>,
+    /// Job names that succeeded in recent workflows
+    pub successful_jobs: Vec<InternedString>,
+    /// Per-file rebuild reason for debugging
+    pub rebuild_reasons: Vec<RebuildReason>,
+}
+
+/// Reason why a file needs to be rebuilt
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum RebuildReasonKind {
+    /// File is in current diff
+    NewChange,
+    /// File was in a failed workflow
+    PreviousFailure,
+    /// Both new change and previous failure
+    BothNewAndFailed,
+}
+
+/// Detailed rebuild reason for a single file
+#[derive(Debug, Clone)]
+pub struct RebuildReason {
+    /// File path
+    pub file: InternedString,
+    /// Why this file needs rebuild
+    pub kind: RebuildReasonKind,
+    /// Which workflow run failed (if applicable)
+    pub failed_run_id: Option<u64>,
+    /// Which specific job failed (if applicable)
+    pub failed_job_name: Option<InternedString>,
+}
+
+/// Pipeline diagnostic message
+#[derive(Debug, Clone)]
+pub struct Diagnostic {
+    /// Severity level
+    pub severity: DiagnosticSeverity,
+    /// Category of the diagnostic
+    pub category: DiagnosticCategory,
+    /// Human-readable message
+    pub message: String,
+}
+
+/// Diagnostic severity level
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum DiagnosticSeverity {
+    /// Non-fatal warning
+    Warning,
+    /// Soft error (recoverable)
+    SoftError,
+}
+
+/// Diagnostic category for filtering
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum DiagnosticCategory {
+    /// Error during initial diff computation
+    InitialDiff,
+    /// Error during submodule diff
+    SubmoduleDiff,
+    /// Skipped because base and head SHA are the same
+    SkippedSameSha,
+    /// Shallow clone depth insufficient
+    ShallowClone,
+    /// Error loading pattern file
+    PatternLoad,
+    /// Error during symlink detection
+    SymlinkDetection,
+    /// Workflow API error (non-fatal)
+    WorkflowApi,
+}
+
+/// Result of YAML group pattern matching
+#[derive(Debug, Clone)]
+pub struct GroupResult {
+    /// Group key (from YAML)
+    pub key: String,
+    /// Indices into all_files that matched this group's patterns
+    pub matched_indices: Vec<u32>,
+}
+
+/// Configuration input - parameters organized by category
 #[derive(Debug, Clone)]
 pub struct InputConfig<'a> {
     // Git references
@@ -209,6 +396,17 @@ pub struct InputConfig<'a> {
     /// Separator for ignored files output
     pub files_ignore_separator: Cow<'a, str>,
 
+    // Feature 1: YAML patterns
+    /// YAML content with pattern groups
+    pub files_yaml: Option<Cow<'a, str>>,
+    /// Path to YAML file with pattern groups
+    pub files_yaml_from_source_file: Option<Cow<'a, str>>,
+    // Feature 2: Pattern source files
+    /// Path to file containing patterns (one per line)
+    pub files_from_source_file: Option<Cow<'a, str>>,
+    /// Separator for source file patterns
+    pub files_from_source_file_separator: Cow<'a, str>,
+
     // Diff configuration
     /// Git diff filter (ACDMRTUX)
     pub diff_filter: Cow<'a, str>,
@@ -228,6 +426,14 @@ pub struct InputConfig<'a> {
     pub quotepath: bool,
     /// Path separator for output
     pub path_separator: Cow<'a, str>,
+
+    // Feature 6: Directory extras
+    /// Exclude current directory from dir_names output
+    pub dir_names_exclude_current_dir: bool,
+    /// Only include directories containing these files
+    pub dir_names_include_files: Option<Vec<Cow<'a, str>>>,
+    /// For deleted files, only include directories where all files are deleted
+    pub dir_names_deleted_files_include_only_deleted_dirs: bool,
 
     // Submodules
     /// Include submodule changes
@@ -272,8 +478,28 @@ pub struct InputConfig<'a> {
     pub recover_deleted_files: bool,
     /// Exclude symbolic links
     pub exclude_symlinks: bool,
-    /// SHA256 hash for verification
-    pub sha256: Option<Cow<'a, str>>,
+
+    // Feature 9: Tag comparison
+    /// Pattern to match tags for comparison
+    pub tags_pattern: Option<Cow<'a, str>>,
+    /// Pattern to ignore tags
+    pub tags_ignore_pattern: Option<Cow<'a, str>>,
+
+    // Feature 11: Soft-fail
+    /// Fail on initial diff error (default: true)
+    pub fail_on_initial_diff_error: bool,
+    /// Fail on submodule diff error (default: false)
+    pub fail_on_submodule_diff_error: bool,
+    /// Skip if base and head SHA are the same (default: false)
+    pub skip_same_sha: bool,
+
+    // Feature 15: Rename splitting
+    /// Output renamed files as separate deleted + added entries
+    pub output_renamed_as_deleted_added: bool,
+
+    // Feature 16: POSIX path separator
+    /// Force POSIX (forward slash) path separators in output
+    pub use_posix_path_separator: bool,
 
     // Workflow failure tracking
     /// Enable workflow failure tracking
@@ -286,6 +512,16 @@ pub struct InputConfig<'a> {
     pub workflow_max_wait_seconds: u32,
     /// Include failed files in incremental CI output (default: true)
     pub include_failed_files: bool,
+
+    // Workflow intelligence (enhanced)
+    /// Track at job level (individual job results)
+    pub track_job_level: bool,
+    /// Number of commits to look back for successful workflows
+    pub workflow_success_lookback: u32,
+    /// Skip files from successful prior workflows (default: true when track_workflow_failures)
+    pub skip_successful_files: bool,
+    /// Glob pattern to match specific workflow names
+    pub workflow_name_filter: Option<Cow<'a, str>>,
 }
 
 impl<'a> Default for InputConfig<'a> {
@@ -299,6 +535,10 @@ impl<'a> Default for InputConfig<'a> {
             files_separator: Cow::Borrowed("\n"),
             files_ignore: None,
             files_ignore_separator: Cow::Borrowed("\n"),
+            files_yaml: None,
+            files_yaml_from_source_file: None,
+            files_from_source_file: None,
+            files_from_source_file_separator: Cow::Borrowed("\n"),
             diff_filter: Cow::Borrowed("ACDMRTUX"),
             include_all_old_new_renamed_files: false,
             old_new_separator: Cow::Borrowed(" "),
@@ -311,6 +551,9 @@ impl<'a> Default for InputConfig<'a> {
             } else {
                 Cow::Borrowed("/")
             },
+            dir_names_exclude_current_dir: false,
+            dir_names_include_files: None,
+            dir_names_deleted_files_include_only_deleted_dirs: false,
             include_submodules: false,
             submodule_filter: None,
             fetch_depth: 0,
@@ -328,12 +571,22 @@ impl<'a> Default for InputConfig<'a> {
             match_gitignore_files: false,
             recover_deleted_files: false,
             exclude_symlinks: false,
-            sha256: None,
+            tags_pattern: None,
+            tags_ignore_pattern: None,
+            fail_on_initial_diff_error: true,
+            fail_on_submodule_diff_error: false,
+            skip_same_sha: false,
+            output_renamed_as_deleted_added: false,
+            use_posix_path_separator: false,
             track_workflow_failures: false,
             workflow_lookback_commits: 5,
             wait_for_active_workflows: true,
             workflow_max_wait_seconds: 300,
             include_failed_files: true,
+            track_job_level: false,
+            workflow_success_lookback: 5,
+            skip_successful_files: true,
+            workflow_name_filter: None,
         }
     }
 }
@@ -393,5 +646,104 @@ mod tests {
         assert_eq!(config.files_separator, "\n");
         assert!(!config.json);
         assert!(config.quotepath);
+    }
+
+    #[test]
+    fn test_file_origin_default() {
+        let origin = FileOrigin::default();
+        assert!(!origin.in_current_changes);
+        assert!(!origin.in_previous_failure);
+        assert!(!origin.in_previous_success);
+    }
+
+    #[test]
+    fn test_processed_result_from_unfiltered() {
+        let diff = DiffResult {
+            files: vec![
+                ChangedFile {
+                    path: InternedString(0),
+                    change_type: ChangeType::Added,
+                    previous_path: None,
+                    is_symlink: false,
+                    submodule_depth: 0,
+                    origin: FileOrigin::default(),
+                },
+                ChangedFile {
+                    path: InternedString(1),
+                    change_type: ChangeType::Modified,
+                    previous_path: None,
+                    is_symlink: false,
+                    submodule_depth: 0,
+                    origin: FileOrigin::default(),
+                },
+            ],
+            additions: 10,
+            deletions: 5,
+        };
+
+        let result = ProcessedResult::from_unfiltered(diff);
+        assert_eq!(result.all_files.len(), 2);
+        assert_eq!(result.filtered_indices, vec![0, 1]);
+        assert!(result.unmatched_indices.is_empty());
+        assert!(!result.pattern_applied);
+        assert_eq!(result.additions, 10);
+        assert_eq!(result.deletions, 5);
+    }
+
+    #[test]
+    fn test_processed_result_accessors() {
+        let result = ProcessedResult {
+            all_files: vec![
+                ChangedFile {
+                    path: InternedString(0),
+                    change_type: ChangeType::Added,
+                    previous_path: None,
+                    is_symlink: false,
+                    submodule_depth: 0,
+                    origin: FileOrigin::default(),
+                },
+                ChangedFile {
+                    path: InternedString(1),
+                    change_type: ChangeType::Modified,
+                    previous_path: None,
+                    is_symlink: false,
+                    submodule_depth: 0,
+                    origin: FileOrigin::default(),
+                },
+                ChangedFile {
+                    path: InternedString(2),
+                    change_type: ChangeType::Deleted,
+                    previous_path: None,
+                    is_symlink: false,
+                    submodule_depth: 0,
+                    origin: FileOrigin::default(),
+                },
+            ],
+            filtered_indices: vec![0, 2],
+            unmatched_indices: vec![1],
+            pattern_applied: true,
+            group_results: Vec::new(),
+            additions: 0,
+            deletions: 0,
+            diagnostics: Vec::new(),
+            workflow_result: None,
+            ci_decision: None,
+        };
+
+        assert_eq!(result.matched_files().len(), 2);
+        assert_eq!(result.other_files().len(), 1);
+        assert_eq!(result.matched_files()[0].change_type, ChangeType::Added);
+        assert_eq!(result.matched_files()[1].change_type, ChangeType::Deleted);
+        assert_eq!(result.other_files()[0].change_type, ChangeType::Modified);
+    }
+
+    #[test]
+    fn test_ci_decision_default() {
+        let decision = CiDecision::default();
+        assert!(decision.files_to_rebuild.is_empty());
+        assert!(decision.files_to_skip.is_empty());
+        assert!(decision.failed_jobs.is_empty());
+        assert!(decision.successful_jobs.is_empty());
+        assert!(decision.rebuild_reasons.is_empty());
     }
 }

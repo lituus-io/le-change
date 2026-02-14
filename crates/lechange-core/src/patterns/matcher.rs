@@ -50,6 +50,7 @@ impl PatternMatcher {
     }
 
     /// Parallel filter using rayon - processes files in parallel
+    #[deprecated(note = "Use partition_files_parallel for index-based partitioning")]
     pub fn filter_files_parallel(
         &self,
         files: &[ChangedFile],
@@ -66,6 +67,27 @@ impl PatternMatcher {
             })
             .cloned()
             .collect()
+    }
+
+    /// Index-based partitioning replacing clone-based filter
+    ///
+    /// Returns (matched_indices, unmatched_indices) - zero cloning, 4 bytes per file.
+    pub fn partition_files_parallel(
+        &self,
+        files: &[ChangedFile],
+        interner: &StringInterner,
+    ) -> (Vec<u32>, Vec<u32>) {
+        use rayon::iter::Either;
+
+        (0..files.len() as u32)
+            .into_par_iter()
+            .partition_map(|i| {
+                let file = &files[i as usize];
+                match interner.resolve(file.path) {
+                    Some(path) if self.matches_sync(path) => Either::Left(i),
+                    _ => Either::Right(i),
+                }
+            })
     }
 }
 

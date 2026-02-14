@@ -16,6 +16,18 @@ struct GitHubFile {
     previous_filename: Option<String>,
 }
 
+/// GitHub API response for comparing two refs
+#[derive(Debug, Deserialize)]
+struct GitHubCompareResponse {
+    #[allow(dead_code)]
+    total_commits: u32,
+    files: Vec<GitHubFile>,
+    /// Whether the file list was truncated (too many files)
+    #[serde(default)]
+    #[allow(dead_code)]
+    files_truncated: bool,
+}
+
 /// GitHub API client for fetching PR files
 pub struct GitHubApiClient {
     client: reqwest::Client,
@@ -132,6 +144,104 @@ impl GitHubApiClient {
                 origin: crate::types::FileOrigin {
                     in_current_changes: true,
                     in_previous_failure: false,
+                    in_previous_success: false,
+                },
+            });
+        }
+
+        Ok(result)
+    }
+
+    /// Compare two refs and get changed files
+    ///
+    /// Endpoint: GET /repos/{owner}/{repo}/compare/{base}...{head}
+    /// Useful for non-PR contexts where git diff is not available.
+    pub async fn compare_refs(
+        &self,
+        owner: &str,
+        repo: &str,
+        base: &str,
+        head: &str,
+        interner: &StringInterner,
+    ) -> Result<DiffResult> {
+        let url = format!(
+            "{}/repos/{}/{}/compare/{}...{}",
+            self.base_url, owner, repo, base, head
+        );
+
+        let mut all_files = Vec::new();
+        let mut page = 1;
+
+        loop {
+            let mut request = self
+                .client
+                .get(&url)
+                .query(&[("page", page.to_string()), ("per_page", "100".to_string())]);
+
+            if let Some(ref token) = self.token {
+                request = request.header("Authorization", format!("Bearer {}", token));
+            }
+
+            let response = request
+                .send()
+                .await
+                .map_err(|e| Error::Runtime(format!("GitHub API compare request failed: {}", e)))?;
+
+            if !response.status().is_success() {
+                return Err(Error::Runtime(format!(
+                    "GitHub API compare returned error: {}",
+                    response.status()
+                )));
+            }
+
+            let compare: GitHubCompareResponse = response.json().await.map_err(|e| {
+                Error::Runtime(format!("Failed to parse GitHub compare response: {}", e))
+            })?;
+
+            all_files.extend(compare.files);
+
+            // GitHub compare API paginates via Link header for large diffs
+            if all_files.len() >= compare.total_commits as usize * 100 || compare.files_truncated {
+                break; // We've gotten what we can
+            }
+
+            if all_files.len() < 100 * page as usize {
+                break; // Less than a full page, we're done
+            }
+
+            page += 1;
+
+            if page > 100 {
+                break; // Safety limit
+            }
+        }
+
+        // Convert to DiffResult
+        let mut result = DiffResult::default();
+
+        for file in all_files {
+            let change_type = match file.status.as_str() {
+                "added" => ChangeType::Added,
+                "removed" => ChangeType::Deleted,
+                "modified" => ChangeType::Modified,
+                "renamed" => ChangeType::Renamed,
+                "copied" => ChangeType::Copied,
+                "changed" => ChangeType::TypeChanged,
+                _ => ChangeType::Unknown,
+            };
+
+            let previous_path = file.previous_filename.as_ref().map(|p| interner.intern(p));
+
+            result.files.push(ChangedFile {
+                path: interner.intern(&file.filename),
+                change_type,
+                previous_path,
+                is_symlink: false,
+                submodule_depth: 0,
+                origin: crate::types::FileOrigin {
+                    in_current_changes: true,
+                    in_previous_failure: false,
+                    in_previous_success: false,
                 },
             });
         }
@@ -214,6 +324,58 @@ mod tests {
         assert!(result.is_err());
 
         // Restore original env vars
+        if let Some(repo) = original_repo {
+            std::env::set_var("GITHUB_REPOSITORY", repo);
+        } else {
+            std::env::remove_var("GITHUB_REPOSITORY");
+        }
+        if let Some(ref_val) = original_ref {
+            std::env::set_var("GITHUB_REF", ref_val);
+        } else {
+            std::env::remove_var("GITHUB_REF");
+        }
+    }
+
+    #[test]
+    fn test_extract_pr_info_happy_path() {
+        let original_repo = std::env::var("GITHUB_REPOSITORY").ok();
+        let original_ref = std::env::var("GITHUB_REF").ok();
+
+        std::env::set_var("GITHUB_REPOSITORY", "owner/repo");
+        std::env::set_var("GITHUB_REF", "refs/pull/42/merge");
+
+        let result = GitHubApiClient::extract_pr_info_from_env();
+        assert!(result.is_ok());
+        let (owner, repo, pr_number) = result.unwrap();
+        assert_eq!(owner, "owner");
+        assert_eq!(repo, "repo");
+        assert_eq!(pr_number, 42);
+
+        if let Some(repo) = original_repo {
+            std::env::set_var("GITHUB_REPOSITORY", repo);
+        } else {
+            std::env::remove_var("GITHUB_REPOSITORY");
+        }
+        if let Some(ref_val) = original_ref {
+            std::env::set_var("GITHUB_REF", ref_val);
+        } else {
+            std::env::remove_var("GITHUB_REF");
+        }
+    }
+
+    #[test]
+    fn test_extract_pr_info_not_a_pr() {
+        let original_repo = std::env::var("GITHUB_REPOSITORY").ok();
+        let original_ref = std::env::var("GITHUB_REF").ok();
+
+        std::env::set_var("GITHUB_REPOSITORY", "owner/repo");
+        std::env::set_var("GITHUB_REF", "refs/heads/main");
+
+        let result = GitHubApiClient::extract_pr_info_from_env();
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("Not a pull request event"));
+
         if let Some(repo) = original_repo {
             std::env::set_var("GITHUB_REPOSITORY", repo);
         } else {

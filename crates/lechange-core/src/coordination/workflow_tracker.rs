@@ -5,13 +5,14 @@ use crate::http::WorkflowApiClient;
 use crate::interner::StringInterner;
 use crate::types::{
     ChangeType, ChangedFile, FileOrigin, InputConfig, InternedString, WorkflowCheckResult,
-    WorkflowConclusion, WorkflowFailure, WorkflowRun, WorkflowStatus,
+    WorkflowConclusion, WorkflowFailure, WorkflowJob, WorkflowRun, WorkflowStatus,
+    WorkflowSuccess,
 };
 use futures::future::try_join_all;
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 
-/// Workflow tracker for failure detection and active workflow coordination
+/// Workflow tracker for failure detection, success tracking, and active workflow coordination
 pub struct WorkflowTracker<'a> {
     api_client: WorkflowApiClient,
     config: &'a InputConfig<'a>,
@@ -35,7 +36,8 @@ impl<'a> WorkflowTracker<'a> {
     /// Main entry point: check workflows and return results
     ///
     /// Phase 1: Check and wait for active workflows (cross-branch)
-    /// Phase 2: Find recent failures (same branch only)
+    /// Phase 2: Find recent failures (same branch, optionally with job-level detail)
+    /// Phase 3: Find recent successes (same branch, for skip decisions)
     pub async fn check_workflows(
         &self,
         branch: &str,
@@ -60,6 +62,11 @@ impl<'a> WorkflowTracker<'a> {
         // Phase 2: Find recent failures (same branch)
         if self.config.include_failed_files {
             result.failures = self.find_recent_failures(&owner, &repo, branch).await?;
+        }
+
+        // Phase 3: Find recent successes (same branch) — for skip decisions
+        if self.config.skip_successful_files {
+            result.successes = self.find_recent_successes(&owner, &repo, branch).await?;
         }
 
         Ok(result)
@@ -118,7 +125,8 @@ impl<'a> WorkflowTracker<'a> {
         current_files: &[ChangedFile],
     ) -> Result<Vec<WorkflowRun>> {
         // Build HashSet of current file paths for fast lookup
-        let current_paths: HashSet<InternedString> = current_files.iter().map(|f| f.path).collect();
+        let current_paths: HashSet<InternedString> =
+            current_files.iter().map(|f| f.path).collect();
 
         // Fetch commit files for each workflow in parallel
         let api_client = &self.api_client;
@@ -179,6 +187,8 @@ impl<'a> WorkflowTracker<'a> {
     }
 
     /// Find recent workflow failures on the same branch
+    ///
+    /// When `track_job_level` is true, also fetches individual failed jobs per run.
     async fn find_recent_failures(
         &self,
         owner: &str,
@@ -200,27 +210,28 @@ impl<'a> WorkflowTracker<'a> {
             )
             .await?;
 
-        // Filter to failures only
+        // Filter to failures only, optionally by workflow name
         let failures: Vec<&WorkflowRun> = completed
             .iter()
             .filter(|run| {
                 run.status == WorkflowStatus::Completed
                     && run.conclusion == Some(WorkflowConclusion::Failure)
             })
+            .filter(|run| self.matches_workflow_name_filter(run))
             .collect();
 
         if failures.is_empty() {
             return Ok(vec![]);
         }
 
-        // Fetch commit files for each failure in parallel
+        // Fetch commit files (and optionally jobs) for each failure in parallel
         let api_client = &self.api_client;
         let interner = self.interner;
+        let track_jobs = self.config.track_job_level;
 
         let failure_results: Vec<WorkflowFailure> = failures
             .par_iter()
             .filter_map(|run| {
-                // Create a Tokio runtime for this thread
                 let rt = tokio::runtime::Runtime::new().ok()?;
 
                 // Fetch commit files
@@ -229,14 +240,101 @@ impl<'a> WorkflowTracker<'a> {
                     .block_on(api_client.get_commit_files(owner, repo, sha, interner))
                     .ok()?;
 
+                // Optionally fetch job-level details
+                let failed_jobs = if track_jobs {
+                    rt.block_on(api_client.list_workflow_jobs(owner, repo, run.id, interner))
+                        .ok()
+                        .map(|jobs| {
+                            jobs.into_iter()
+                                .filter(|j| j.conclusion == Some(WorkflowConclusion::Failure))
+                                .collect::<Vec<WorkflowJob>>()
+                        })
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+
                 Some(WorkflowFailure {
                     run: (*run).clone(),
                     files,
+                    failed_jobs,
                 })
             })
             .collect();
 
         Ok(failure_results)
+    }
+
+    /// Find recent successful workflows on the same branch (Phase 3)
+    ///
+    /// Used for "latest run wins" skip decisions in CiDecisionEngine.
+    async fn find_recent_successes(
+        &self,
+        owner: &str,
+        repo: &str,
+        branch: &str,
+    ) -> Result<Vec<WorkflowSuccess>> {
+        let lookback = self.config.workflow_success_lookback;
+        let completed = self
+            .api_client
+            .list_workflow_runs(
+                owner,
+                repo,
+                branch,
+                Some("completed"),
+                lookback,
+                1,
+                self.interner,
+            )
+            .await?;
+
+        // Filter to successes only, optionally by workflow name
+        let successes: Vec<&WorkflowRun> = completed
+            .iter()
+            .filter(|run| {
+                run.status == WorkflowStatus::Completed
+                    && run.conclusion == Some(WorkflowConclusion::Success)
+            })
+            .filter(|run| self.matches_workflow_name_filter(run))
+            .collect();
+
+        if successes.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let api_client = &self.api_client;
+        let interner = self.interner;
+        let track_jobs = self.config.track_job_level;
+
+        let success_results: Vec<WorkflowSuccess> = successes
+            .par_iter()
+            .filter_map(|run| {
+                let rt = tokio::runtime::Runtime::new().ok()?;
+
+                // Fetch commit files
+                let sha = interner.resolve(run.head_sha)?;
+                let files = rt
+                    .block_on(api_client.get_commit_files(owner, repo, sha, interner))
+                    .ok()?;
+
+                // Optionally fetch job details
+                let jobs = if track_jobs {
+                    rt.block_on(api_client.list_workflow_jobs(owner, repo, run.id, interner))
+                        .ok()
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+
+                Some(WorkflowSuccess {
+                    run: (*run).clone(),
+                    jobs,
+                    files,
+                })
+            })
+            .collect();
+
+        Ok(success_results)
     }
 
     /// Merge failed files into current changes
@@ -283,9 +381,37 @@ impl<'a> WorkflowTracker<'a> {
                     origin: FileOrigin {
                         in_current_changes: false,
                         in_previous_failure: true,
+                        in_previous_success: false,
                     },
                 });
             }
+        }
+    }
+
+    /// Check if a workflow run matches the optional name filter
+    fn matches_workflow_name_filter(&self, run: &WorkflowRun) -> bool {
+        match &self.config.workflow_name_filter {
+            Some(filter) => {
+                if let Some(name) = self.interner.resolve(run.name) {
+                    let filter_str = filter.as_ref();
+                    // Simple glob matching: support * and exact match
+                    if filter_str.contains('*') {
+                        let parts: Vec<&str> = filter_str.split('*').collect();
+                        if parts.len() == 2 {
+                            let (prefix, suffix) = (parts[0], parts[1]);
+                            name.starts_with(prefix) && name.ends_with(suffix)
+                        } else {
+                            // Fallback: exact match for complex patterns
+                            name == filter_str
+                        }
+                    } else {
+                        name == filter_str
+                    }
+                } else {
+                    false
+                }
+            }
+            None => true, // No filter = match all
         }
     }
 
@@ -329,6 +455,7 @@ mod tests {
                 origin: FileOrigin {
                     in_current_changes: true,
                     in_previous_failure: false,
+                    in_previous_success: false,
                 },
             },
             ChangedFile {
@@ -340,6 +467,7 @@ mod tests {
                 origin: FileOrigin {
                     in_current_changes: true,
                     in_previous_failure: false,
+                    in_previous_success: false,
                 },
             },
         ];
@@ -356,6 +484,7 @@ mod tests {
                 created_at: 0,
             },
             files: vec![path2, path3],
+            failed_jobs: Vec::new(),
         }];
 
         let config = InputConfig::default();
@@ -410,5 +539,66 @@ mod tests {
         } else {
             std::env::remove_var("GITHUB_REPOSITORY");
         }
+    }
+
+    #[test]
+    fn test_workflow_name_filter() {
+        let interner = StringInterner::new();
+        let api_client = WorkflowApiClient::new("https://api.github.com".to_string(), None);
+
+        // Test with no filter (match all)
+        let config = InputConfig::default();
+        let tracker = WorkflowTracker::new(api_client, &config, &interner);
+
+        let run = WorkflowRun {
+            id: 1,
+            name: interner.intern("CI"),
+            status: WorkflowStatus::Completed,
+            conclusion: Some(WorkflowConclusion::Success),
+            branch: interner.intern("main"),
+            head_sha: interner.intern("abc123"),
+            created_at: 0,
+        };
+        assert!(tracker.matches_workflow_name_filter(&run));
+
+        // Test with exact filter
+        let api_client2 = WorkflowApiClient::new("https://api.github.com".to_string(), None);
+        let config2 = InputConfig {
+            workflow_name_filter: Some(std::borrow::Cow::Borrowed("CI")),
+            ..Default::default()
+        };
+        let tracker2 = WorkflowTracker::new(api_client2, &config2, &interner);
+        assert!(tracker2.matches_workflow_name_filter(&run));
+
+        let run2 = WorkflowRun {
+            id: 2,
+            name: interner.intern("Deploy"),
+            status: WorkflowStatus::Completed,
+            conclusion: Some(WorkflowConclusion::Success),
+            branch: interner.intern("main"),
+            head_sha: interner.intern("def456"),
+            created_at: 0,
+        };
+        assert!(!tracker2.matches_workflow_name_filter(&run2));
+
+        // Test with glob filter
+        let api_client3 = WorkflowApiClient::new("https://api.github.com".to_string(), None);
+        let config3 = InputConfig {
+            workflow_name_filter: Some(std::borrow::Cow::Borrowed("CI*")),
+            ..Default::default()
+        };
+        let tracker3 = WorkflowTracker::new(api_client3, &config3, &interner);
+
+        let run3 = WorkflowRun {
+            id: 3,
+            name: interner.intern("CI Build"),
+            status: WorkflowStatus::Completed,
+            conclusion: Some(WorkflowConclusion::Success),
+            branch: interner.intern("main"),
+            head_sha: interner.intern("ghi789"),
+            created_at: 0,
+        };
+        assert!(tracker3.matches_workflow_name_filter(&run3));
+        assert!(!tracker3.matches_workflow_name_filter(&run2)); // "Deploy" doesn't match "CI*"
     }
 }

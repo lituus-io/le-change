@@ -49,6 +49,11 @@ impl GitRepository {
         })
     }
 
+    /// Get the repository path (the .git directory or workdir path)
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
     /// Get or create a repository instance (for internal use)
     fn get_repo(&self) -> Result<git2::Repository> {
         // Always reopen the repository
@@ -90,6 +95,102 @@ impl GitRepository {
         })
         .await
         .map_err(|e| Error::Runtime(format!("Task join error: {}", e)))?
+    }
+
+    /// Ensure repository has sufficient depth with retry and exponential deepening
+    ///
+    /// Tries to find the merge base between base and head. If the merge base
+    /// is not reachable (shallow clone), deepens the repository and retries.
+    pub async fn ensure_depth_with_retry(
+        &self,
+        base_sha: &str,
+        head_sha: &str,
+        initial_depth: u32,
+        max_retries: u32,
+    ) -> Result<()> {
+        let path = self.path.clone();
+        let base = base_sha.to_string();
+        let head = head_sha.to_string();
+
+        tokio::task::spawn_blocking(move || {
+            let repo = git2::Repository::open(&path)?;
+
+            // Check if repo is shallow
+            let output = std::process::Command::new("git")
+                .args(["rev-parse", "--is-shallow-repository"])
+                .current_dir(&path)
+                .output()
+                .map_err(|e| Error::Git(format!("Failed to check shallow status: {}", e)))?;
+
+            let is_shallow = String::from_utf8_lossy(&output.stdout).trim() == "true";
+
+            if !is_shallow {
+                return Ok(()); // Full clone, no deepening needed
+            }
+
+            // Try to find merge base; if it fails, deepen
+            let base_oid = git2::Oid::from_str(&base)
+                .map_err(|e| Error::Git(format!("Invalid base SHA: {}", e)))?;
+            let head_oid = git2::Oid::from_str(&head)
+                .map_err(|e| Error::Git(format!("Invalid head SHA: {}", e)))?;
+
+            let mut depth = initial_depth.max(1);
+
+            for attempt in 0..=max_retries {
+                if repo.merge_base(base_oid, head_oid).is_ok() {
+                    return Ok(()); // Merge base found
+                }
+
+                if attempt == max_retries {
+                    return Err(Error::ShallowExhausted(format!(
+                        "Could not find merge base between {} and {} after {} retries (depth={}). \
+                         Consider using a deeper clone.",
+                        base, head, max_retries, depth
+                    )));
+                }
+
+                // Deepen the repository
+                let deepen_output = std::process::Command::new("git")
+                    .args(["fetch", &format!("--deepen={}", depth)])
+                    .current_dir(&path)
+                    .output()
+                    .map_err(|e| Error::Git(format!("Failed to deepen repository: {}", e)))?;
+
+                if !deepen_output.status.success() {
+                    let stderr = String::from_utf8_lossy(&deepen_output.stderr);
+                    return Err(Error::Git(format!(
+                        "git fetch --deepen={} failed: {}",
+                        depth, stderr
+                    )));
+                }
+
+                depth *= 2; // Exponential backoff
+            }
+
+            Ok(())
+        })
+        .await
+        .map_err(|e| Error::Runtime(format!("Task join error: {}", e)))?
+    }
+
+    /// Check if a path is a symlink in a specific tree (by SHA)
+    ///
+    /// Useful for detecting symlinks in deleted files where the working tree
+    /// no longer has the file. Falls back to checking the git tree object.
+    pub fn is_symlink_in_tree(&self, sha: &str, file_path: &str) -> Result<bool> {
+        let repo = self.get_repo()?;
+        let oid = git2::Oid::from_str(sha)
+            .map_err(|e| Error::Git(format!("Invalid SHA '{}': {}", sha, e)))?;
+        let commit = repo.find_commit(oid)?;
+        let tree = commit.tree()?;
+
+        match tree.get_path(std::path::Path::new(file_path)) {
+            Ok(entry) => {
+                // Symlinks have filemode 0o120000 (0x8000 in git)
+                Ok(entry.filemode() == 0o120000)
+            }
+            Err(_) => Ok(false), // Path not found in tree
+        }
     }
 
     /// Compute diff between two commits (sync version)
@@ -176,6 +277,7 @@ impl GitRepository {
                         origin: crate::types::FileOrigin {
                             in_current_changes: true,
                             in_previous_failure: false,
+                            in_previous_success: false,
                         },
                     });
                 }
@@ -324,6 +426,7 @@ impl AsyncGitOps for GitRepository {
                             origin: crate::types::FileOrigin {
                                 in_current_changes: true,
                                 in_previous_failure: false,
+                                in_previous_success: false,
                             },
                         });
                     }
@@ -473,5 +576,59 @@ mod tests {
         assert_eq!(result.files.len(), 1);
         assert_eq!(result.files[0].change_type, crate::types::ChangeType::Added);
         assert_eq!(interner.resolve(result.files[0].path), Some("file2.txt"));
+    }
+
+    #[test]
+    fn test_is_symlink_in_tree() {
+        let (dir, repo) = create_test_repo();
+        let repo_path = dir.path();
+
+        // Get the SHA with the regular file
+        let sha = repo.resolve_sha_sync("HEAD").unwrap();
+
+        // Regular file should not be a symlink
+        let result = repo.is_symlink_in_tree(&sha, "file1.txt").unwrap();
+        assert!(!result);
+
+        // Create a symlink and commit it
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("file1.txt", repo_path.join("link.txt")).unwrap();
+            std::process::Command::new("git")
+                .args(["add", "link.txt"])
+                .current_dir(repo_path)
+                .output()
+                .unwrap();
+            std::process::Command::new("git")
+                .args(["commit", "-m", "Add symlink"])
+                .current_dir(repo_path)
+                .output()
+                .unwrap();
+
+            let sha_with_link = repo.resolve_sha_sync("HEAD").unwrap();
+            let is_link = repo.is_symlink_in_tree(&sha_with_link, "link.txt").unwrap();
+            assert!(is_link);
+
+            let is_regular = repo.is_symlink_in_tree(&sha_with_link, "file1.txt").unwrap();
+            assert!(!is_regular);
+        }
+    }
+
+    #[test]
+    fn test_is_symlink_in_tree_invalid_sha() {
+        let (_dir, repo) = create_test_repo();
+
+        let result = repo.is_symlink_in_tree("0000000000000000000000000000000000000000", "file1.txt");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_is_symlink_in_tree_file_not_found() {
+        let (_dir, repo) = create_test_repo();
+        let sha = repo.resolve_sha_sync("HEAD").unwrap();
+
+        // File not in tree returns false (not an error based on the implementation)
+        let result = repo.is_symlink_in_tree(&sha, "nonexistent.txt").unwrap();
+        assert!(!result);
     }
 }
