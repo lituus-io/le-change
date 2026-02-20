@@ -1,0 +1,24 @@
+[workspace]
+members = [
+    "crates/lechange-core",
+    "crates/lechange-python",
+    "crates/lechange-cli",
+    "crates/lechange-fuzz",
+]
+resolver = "2"
+
+[workspace.dependencies]
+lechange-core = { path = "crates/lechange-core" }
+
+[profile.release]
+lto = "fat"          # Full LTO for maximum optimization
+codegen-units = 1    # Single codegen unit for better optimization
+opt-level = 3        # Maximum optimization
+strip = true         # Strip symbols for smaller binary
+panic = "abort"      # Remove unwinding tables — CLI exits on error
+
+[profile.bench]
+inherits = "release"
+
+[profile.dev]
+opt-level = 0        # No optimization for faster builds in dev

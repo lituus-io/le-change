@@ -1,0 +1,130 @@
+# Example GitHub Actions workflow using LeChange
+# Place this file in .github/workflows/ to use it
+
+name: Conditional CI with LeChange
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      run_python_tests: ${{ steps.detect.outputs.run_python_tests }}
+      run_rust_tests: ${{ steps.detect.outputs.run_rust_tests }}
+      run_docs_build: ${{ steps.detect.outputs.run_docs_build }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install LeChange
+        run: pip install lechange
+
+      - name: Detect changes
+        id: detect
+        run: |
+          python << 'EOF'
+          import os
+          from lechange import ChangeDetector, Config
+
+          detector = ChangeDetector(".")
+
+          # Determine base SHA
+          if os.getenv("GITHUB_EVENT_NAME") == "pull_request":
+              base = f"origin/{os.getenv('GITHUB_BASE_REF')}"
+          else:
+              base = "HEAD^"
+
+          # Check Python files
+          config = Config(base=base, head="HEAD", files=["**/*.py"])
+          result = detector.get_changed_files(config)
+          run_python = "true" if result.any_changed else "false"
+
+          # Check Rust files
+          config = Config(base=base, head="HEAD", files=["**/*.rs", "**/Cargo.toml"])
+          result = detector.get_changed_files(config)
+          run_rust = "true" if result.any_changed else "false"
+
+          # Check documentation
+          config = Config(base=base, head="HEAD", files=["**/*.md", "docs/**"])
+          result = detector.get_changed_files(config)
+          run_docs = "true" if result.any_changed else "false"
+
+          # Output to GitHub Actions
+          with open(os.getenv("GITHUB_OUTPUT"), "a") as f:
+              f.write(f"run_python_tests={run_python}\n")
+              f.write(f"run_rust_tests={run_rust}\n")
+              f.write(f"run_docs_build={run_docs}\n")
+
+          print(f"Python tests: {run_python}")
+          print(f"Rust tests: {run_rust}")
+          print(f"Docs build: {run_docs}")
+          EOF
+
+  python-tests:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.run_python_tests == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install pytest pytest-cov
+          pip install -e .
+
+      - name: Run Python tests
+        run: pytest tests/ -v --cov
+
+  rust-tests:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.run_rust_tests == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Run Rust tests
+        run: cargo test --workspace
+
+  docs-build:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.run_docs_build == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build documentation
+        run: |
+          echo "Building documentation..."
+          # Add your docs build command here
+
+  all-checks-passed:
+    needs: [python-tests, rust-tests, docs-build]
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check all jobs
+        run: |
+          echo "All required checks completed"
