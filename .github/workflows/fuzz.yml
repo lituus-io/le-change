@@ -1,0 +1,59 @@
+name: Fuzz Testing
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'Fuzzing duration in seconds'
+        required: false
+        default: '300'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fuzz:
+    name: Fuzz Test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - fuzz_diff_parser
+          - fuzz_pattern_matcher
+          - fuzz_interner
+          - fuzz_config_parser
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Determine duration
+        id: duration
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "duration=${{ github.event.inputs.duration }}" >> $GITHUB_OUTPUT
+          else
+            echo "duration=300" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run fuzz target
+        continue-on-error: true
+        run: |
+          cd fuzz
+          cargo fuzz run ${{ matrix.target }} -- -max_total_time=${{ steps.duration.outputs.duration }}
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}
+          if-no-files-found: ignore

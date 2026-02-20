@@ -1,0 +1,136 @@
+name: 'Le Change'
+description: 'Ultraperformant change detection with deploy matrix, group discovery, and workflow intelligence'
+author: 'lituus-io'
+branding:
+  icon: 'git-branch'
+  color: 'blue'
+
+inputs:
+  files:
+    description: 'Glob patterns to include (comma-separated)'
+    required: false
+  files_ignore:
+    description: 'Glob patterns to exclude (comma-separated)'
+    required: false
+  files_group_by:
+    description: 'Template for group discovery (e.g. stacks/{group}/**)'
+    required: false
+  files_group_by_key:
+    description: 'Group key mode: name, path, or hash'
+    default: 'name'
+  files_ancestor_lookup_depth:
+    description: 'Ancestor directory lookup depth (0=disabled, max=3)'
+    default: '0'
+  track_workflow_failures:
+    description: 'Enable workflow failure tracking'
+    default: 'false'
+  failure_tracking_level:
+    description: 'Tracking granularity: run or job'
+    default: 'run'
+  wait_for_active_workflows:
+    description: 'Wait for concurrent overlapping workflows to complete'
+    default: 'false'
+  workflow_max_wait_seconds:
+    description: 'Max seconds to wait for active workflows'
+    default: '300'
+  workflow_name_filter:
+    description: 'Glob pattern to filter workflow names'
+    required: false
+  deploy_matrix_include_reason:
+    description: 'Include action/reason fields in deploy matrix'
+    default: 'false'
+  deploy_matrix_include_concurrency:
+    description: 'Include concurrency_blocked fields in deploy matrix'
+    default: 'false'
+  token:
+    description: 'GitHub token for API access'
+    default: ${{ github.token }}
+  base_sha:
+    description: 'Override base commit SHA'
+    required: false
+  sha:
+    description: 'Override head commit SHA'
+    required: false
+
+outputs:
+  matrix:
+    description: 'Deploy matrix JSON — use with fromJson() in strategy.matrix'
+    value: ${{ steps.detect.outputs.matrix }}
+  has_changes:
+    description: 'true if any deployable changes detected'
+    value: ${{ steps.detect.outputs.has_changes }}
+  changed_files:
+    description: 'Space-separated list of all changed files'
+    value: ${{ steps.detect.outputs.changed_files }}
+  changed_files_count:
+    description: 'Number of changed files'
+    value: ${{ steps.detect.outputs.changed_files_count }}
+  any_changed:
+    description: 'true if any files changed'
+    value: ${{ steps.detect.outputs.any_changed }}
+  added_files:
+    description: 'Space-separated list of added files'
+    value: ${{ steps.detect.outputs.added_files }}
+  modified_files:
+    description: 'Space-separated list of modified files'
+    value: ${{ steps.detect.outputs.modified_files }}
+  deleted_files:
+    description: 'Space-separated list of deleted files'
+    value: ${{ steps.detect.outputs.deleted_files }}
+  deploy_decisions:
+    description: 'JSON array of per-group deploy decisions'
+    value: ${{ steps.detect.outputs.deploy_decisions }}
+  files_to_rebuild:
+    description: 'Space-separated list of files needing rebuild'
+    value: ${{ steps.detect.outputs.files_to_rebuild }}
+  files_to_skip:
+    description: 'Space-separated list of files to skip'
+    value: ${{ steps.detect.outputs.files_to_skip }}
+  diagnostics:
+    description: 'JSON array of diagnostic messages'
+    value: ${{ steps.detect.outputs.diagnostics }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Detect changes
+      id: detect
+      shell: bash
+      run: |
+        # Resolve platform → release asset name
+        case "${{ runner.os }}-${{ runner.arch }}" in
+          Linux-X64)    ASSET="lechange-x86_64-unknown-linux-musl" ;;
+          Linux-ARM64)  ASSET="lechange-aarch64-unknown-linux-musl" ;;
+          macOS-ARM64)  ASSET="lechange-aarch64-apple-darwin" ;;
+          Windows-X64)  ASSET="lechange-x86_64-pc-windows-msvc.exe" ;;
+          *) echo "::error::Unsupported platform: ${{ runner.os }}-${{ runner.arch }}" && exit 1 ;;
+        esac
+
+        REPO="${{ github.action_repository }}"
+        VERSION="${{ github.action_ref }}"
+        BINARY="/tmp/lechange-${VERSION}"
+
+        # Download only if not already present (survives within a workflow)
+        if [ ! -x "${BINARY}" ]; then
+          curl -fsSL "https://github.com/${REPO}/releases/download/${VERSION}/${ASSET}" -o "${BINARY}"
+          chmod +x "${BINARY}"
+        fi
+
+        # Run detection
+        "${BINARY}" detect
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+        LECHANGE_FILES: ${{ inputs.files }}
+        LECHANGE_FILES_IGNORE: ${{ inputs.files_ignore }}
+        LECHANGE_FILES_GROUP_BY: ${{ inputs.files_group_by }}
+        LECHANGE_FILES_GROUP_BY_KEY: ${{ inputs.files_group_by_key }}
+        LECHANGE_FILES_ANCESTOR_LOOKUP_DEPTH: ${{ inputs.files_ancestor_lookup_depth }}
+        LECHANGE_TRACK_WORKFLOW_FAILURES: ${{ inputs.track_workflow_failures }}
+        LECHANGE_FAILURE_TRACKING_LEVEL: ${{ inputs.failure_tracking_level }}
+        LECHANGE_WAIT_FOR_ACTIVE_WORKFLOWS: ${{ inputs.wait_for_active_workflows }}
+        LECHANGE_WORKFLOW_MAX_WAIT_SECONDS: ${{ inputs.workflow_max_wait_seconds }}
+        LECHANGE_WORKFLOW_NAME_FILTER: ${{ inputs.workflow_name_filter }}
+        LECHANGE_DEPLOY_MATRIX_INCLUDE_REASON: ${{ inputs.deploy_matrix_include_reason }}
+        LECHANGE_DEPLOY_MATRIX_INCLUDE_CONCURRENCY: ${{ inputs.deploy_matrix_include_concurrency }}
+        LECHANGE_BASE_SHA: ${{ inputs.base_sha }}
+        LECHANGE_SHA: ${{ inputs.sha }}
