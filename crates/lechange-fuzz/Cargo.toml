@@ -7,7 +7,7 @@ license = "AGPL-3.0-or-later"
 publish = false
 
 [dependencies]
-lechange-core = { path = "../lechange-core" }
+lechange-core = { package = "le-change", path = "../lechange-core" }
 libfuzzer-sys = "0.4"
 
 [[bin]]

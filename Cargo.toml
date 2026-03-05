@@ -9,7 +9,7 @@ exclude = ["fuzz"]
 resolver = "2"
 
 [workspace.dependencies]
-lechange-core = { path = "crates/lechange-core" }
+lechange-core = { package = "le-change", path = "crates/lechange-core" }
 
 [profile.release]
 lto = "fat"          # Full LTO for maximum optimization

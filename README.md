@@ -127,7 +127,7 @@ print(result.has_deployable_groups)
 ## Development
 
 ```bash
-cargo test -p lechange-core    # Core library tests
+cargo test -p le-change    # Core library tests
 cargo test -p lechange-cli     # CLI tests
 cargo build --release -p lechange-cli  # Release binary
 ```

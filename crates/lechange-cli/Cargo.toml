@@ -12,7 +12,7 @@ name = "lechange"
 path = "src/main.rs"
 
 [dependencies]
-lechange-core = { path = "../lechange-core" }
+lechange-core = { package = "le-change", path = "../lechange-core" }
 clap = { version = "4", default-features = false, features = ["derive", "env", "std", "help", "usage", "error-context"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 serde_json = "1"

@@ -38,13 +38,13 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: Build
-        run: cargo build -p lechange-core -p lechange-cli
+        run: cargo build -p le-change -p lechange-cli
 
       - name: Run tests
-        run: cargo test -p lechange-core -p lechange-cli
+        run: cargo test -p le-change -p lechange-cli
 
       - name: Clippy
-        run: cargo clippy -p lechange-core -p lechange-cli -- -D warnings
+        run: cargo clippy -p le-change -p lechange-cli -- -D warnings
 
   fmt:
     name: Format

@@ -9,7 +9,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-lechange-core = { path = "../crates/lechange-core" }
+lechange-core = { package = "le-change", path = "../crates/lechange-core" }
 
 [[bin]]
 name = "fuzz_diff_parser"
