@@ -111,14 +111,24 @@ runs:
         if [ "${{ runner.os }}" = "Windows" ]; then EXT=".exe"; fi
 
         REPO="${{ github.action_repository }}"
-        VERSION="${{ github.action_ref }}"
-        BINARY="/tmp/lechange-${VERSION}${EXT}"
+        ACTION_REF="${{ github.action_ref }}"
 
-        # Validate version is a release tag
-        if [[ ! "${VERSION}" =~ ^v[0-9] ]]; then
-          echo "::error::le-change must be pinned to a release tag (e.g. @v0.1.0), got '${VERSION}'"
-          exit 1
+        # Resolve version: support both tag refs (@v0.1.1) and SHA refs (@abc123)
+        if [[ "${ACTION_REF}" =~ ^v[0-9] ]]; then
+          VERSION="${ACTION_REF}"
+        else
+          # SHA or branch ref — resolve latest release tag from the repo
+          VERSION=$(curl -fsSL --retry 3 --retry-delay 2 \
+            "https://api.github.com/repos/${REPO}/releases/latest" \
+            2>/dev/null | grep -o '"tag_name":\s*"[^"]*"' | head -1 | cut -d'"' -f4)
+          if [ -z "${VERSION}" ]; then
+            echo "::error::Could not resolve release version for ref '${ACTION_REF}'. Pin to a release tag (e.g. @v0.1.1) or ensure a GitHub release exists."
+            exit 1
+          fi
+          echo "Resolved ref '${ACTION_REF}' to release ${VERSION}"
         fi
+
+        BINARY="/tmp/lechange-${VERSION}${EXT}"
 
         # Download, verify, and install atomically
         if [ ! -x "${BINARY}" ]; then
