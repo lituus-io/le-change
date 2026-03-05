@@ -51,6 +51,9 @@ inputs:
   sha:
     description: 'Override head commit SHA'
     required: false
+  version:
+    description: 'Override binary version to download (e.g. v0.1.1). Auto-resolved if omitted.'
+    required: false
 
 outputs:
   matrix:
@@ -111,21 +114,25 @@ runs:
         if [ "${{ runner.os }}" = "Windows" ]; then EXT=".exe"; fi
 
         REPO="${{ github.action_repository }}"
+        REPO="${REPO:-lituus-io/le-change}"
+
+        # Resolve version: explicit input > tag ref > latest release
+        INPUT_VERSION="${{ inputs.version }}"
         ACTION_REF="${{ github.action_ref }}"
 
-        # Resolve version: support both tag refs (@v0.1.1) and SHA refs (@abc123)
-        if [[ "${ACTION_REF}" =~ ^v[0-9] ]]; then
+        if [ -n "${INPUT_VERSION}" ]; then
+          VERSION="${INPUT_VERSION}"
+        elif [[ "${ACTION_REF}" =~ ^v[0-9] ]]; then
           VERSION="${ACTION_REF}"
         else
-          # SHA or branch ref — resolve latest release tag from the repo
           VERSION=$(curl -fsSL --retry 3 --retry-delay 2 \
             "https://api.github.com/repos/${REPO}/releases/latest" \
             2>/dev/null | grep -o '"tag_name":\s*"[^"]*"' | head -1 | cut -d'"' -f4)
           if [ -z "${VERSION}" ]; then
-            echo "::error::Could not resolve release version for ref '${ACTION_REF}'. Pin to a release tag (e.g. @v0.1.1) or ensure a GitHub release exists."
+            echo "::error::Could not resolve release version. Set 'version' input or pin to a release tag (e.g. @v0.1.1)."
             exit 1
           fi
-          echo "Resolved ref '${ACTION_REF}' to release ${VERSION}"
+          echo "Resolved to latest release ${VERSION}"
         fi
 
         BINARY="/tmp/lechange-${VERSION}${EXT}"
