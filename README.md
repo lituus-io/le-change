@@ -1,5 +1,10 @@
 # Le Change
 
+[![CI](https://github.com/lituus-io/le-change/actions/workflows/ci.yml/badge.svg)](https://github.com/lituus-io/le-change/actions/workflows/ci.yml)
+[![Security](https://github.com/lituus-io/le-change/actions/workflows/security.yml/badge.svg)](https://github.com/lituus-io/le-change/actions/workflows/security.yml)
+[![Fuzz Testing](https://github.com/lituus-io/le-change/actions/workflows/fuzz.yml/badge.svg)](https://github.com/lituus-io/le-change/actions/workflows/fuzz.yml)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+
 Fast Git change detection with deploy matrix generation.
 
 Rust core library with a CLI binary, GitHub Action, and Python bindings.

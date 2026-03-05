@@ -5,6 +5,7 @@ members = [
     "crates/lechange-cli",
     "crates/lechange-fuzz",
 ]
+exclude = ["fuzz"]
 resolver = "2"
 
 [workspace.dependencies]

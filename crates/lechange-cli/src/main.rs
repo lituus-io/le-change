@@ -387,16 +387,22 @@ fn run_detect(args: DetectArgs) -> i32 {
         diagnostics_json: &diagnostics_json,
     };
 
-    match output_format {
+    let write_result = match output_format {
         OutputFormat::Gha => write_gha_output(&out),
         OutputFormat::Json => write_json_output(&out),
         OutputFormat::Text => write_text_output(&out, &outputs, &interner, &processed),
+    };
+    if let Err(e) = write_result {
+        eprintln!("Error: failed to write output: {e}");
+        return 1;
     }
 
-    if has_changes {
-        0
-    } else {
-        2
+    // GHA: always exit 0 — users check has_changes output
+    // Non-GHA: exit 2 signals "no changes" for scripting
+    match output_format {
+        OutputFormat::Gha => 0,
+        _ if has_changes => 0,
+        _ => 2,
     }
 }
 
@@ -416,41 +422,40 @@ struct DetectOutput<'a> {
 }
 
 /// Write outputs using GitHub Actions multiline syntax to $GITHUB_OUTPUT
-fn write_gha_output(out: &DetectOutput) {
+fn write_gha_output(out: &DetectOutput) -> std::io::Result<()> {
     let output_file = match std::env::var("GITHUB_OUTPUT") {
         Ok(f) => f,
         Err(_) => {
             eprintln!("Warning: GITHUB_OUTPUT not set, falling back to stdout");
-            write_json_output(out);
-            return;
+            return write_json_output(out);
         }
     };
 
-    let mut f = match std::fs::OpenOptions::new()
+    let mut f = std::fs::OpenOptions::new()
         .append(true)
         .create(true)
-        .open(&output_file)
-    {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("Error: cannot open GITHUB_OUTPUT ({output_file}): {e}");
-            return;
-        }
-    };
+        .open(&output_file)?;
 
-    let delim = "LECHANGE_EOF";
+    let delim = format!(
+        "LECHANGE_EOF_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    );
 
-    let _ = writeln!(f, "matrix<<{delim}");
-    let _ = writeln!(f, "{}", safe_output_escape(out.deploy_matrix));
-    let _ = writeln!(f, "{delim}");
-    let _ = writeln!(f, "has_changes={}", out.has_changes);
+    writeln!(f, "matrix<<{delim}")?;
+    writeln!(f, "{}", safe_output_escape(out.deploy_matrix))?;
+    writeln!(f, "{delim}")?;
+    writeln!(f, "has_changes={}", out.has_changes)?;
 
     let changed_str = out.all_changed.join(" ");
-    let _ = writeln!(f, "changed_files<<{delim}");
-    let _ = writeln!(f, "{}", safe_output_escape(&changed_str));
-    let _ = writeln!(f, "{delim}");
-    let _ = writeln!(f, "changed_files_count={}", out.all_changed.len());
-    let _ = writeln!(f, "any_changed={}", out.any_changed);
+    writeln!(f, "changed_files<<{delim}")?;
+    writeln!(f, "{}", safe_output_escape(&changed_str))?;
+    writeln!(f, "{delim}")?;
+    writeln!(f, "changed_files_count={}", out.all_changed.len())?;
+    writeln!(f, "any_changed={}", out.any_changed)?;
 
     for (name, files) in [
         ("added_files", out.added),
@@ -459,42 +464,43 @@ fn write_gha_output(out: &DetectOutput) {
         ("files_to_rebuild", out.files_to_rebuild),
         ("files_to_skip", out.files_to_skip),
     ] {
-        let _ = writeln!(f, "{name}<<{delim}");
-        let _ = writeln!(f, "{}", safe_output_escape(&files.join(" ")));
-        let _ = writeln!(f, "{delim}");
+        writeln!(f, "{name}<<{delim}")?;
+        writeln!(f, "{}", safe_output_escape(&files.join(" ")))?;
+        writeln!(f, "{delim}")?;
     }
 
-    let _ = writeln!(f, "deploy_decisions<<{delim}");
-    let _ = writeln!(f, "{}", safe_output_escape(out.deploy_decisions_json));
-    let _ = writeln!(f, "{delim}");
-    let _ = writeln!(f, "diagnostics<<{delim}");
-    let _ = writeln!(f, "{}", safe_output_escape(out.diagnostics_json));
-    let _ = writeln!(f, "{delim}");
+    writeln!(f, "deploy_decisions<<{delim}")?;
+    writeln!(f, "{}", safe_output_escape(out.deploy_decisions_json))?;
+    writeln!(f, "{delim}")?;
+    writeln!(f, "diagnostics<<{delim}")?;
+    writeln!(f, "{}", safe_output_escape(out.diagnostics_json))?;
+    writeln!(f, "{delim}")?;
 
     // Summary to stdout (visible in job log)
     let stdout = std::io::stdout();
     let mut w = stdout.lock();
-    let _ = writeln!(w, "Le Change Detection Results");
-    let _ = writeln!(w, "===========================");
-    let _ = writeln!(w, "Changed files: {}", out.all_changed.len());
-    let _ = writeln!(
+    writeln!(w, "Le Change Detection Results")?;
+    writeln!(w, "===========================")?;
+    writeln!(w, "Changed files: {}", out.all_changed.len())?;
+    writeln!(
         w,
         "  Added: {}, Modified: {}, Deleted: {}",
         out.added.len(),
         out.modified.len(),
         out.deleted.len()
-    );
-    let _ = writeln!(w, "Has deployable changes: {}", out.has_changes);
+    )?;
+    writeln!(w, "Has deployable changes: {}", out.has_changes)?;
     if !out.files_to_rebuild.is_empty() {
-        let _ = writeln!(w, "Files to rebuild: {}", out.files_to_rebuild.len());
+        writeln!(w, "Files to rebuild: {}", out.files_to_rebuild.len())?;
     }
     if !out.files_to_skip.is_empty() {
-        let _ = writeln!(w, "Files to skip: {}", out.files_to_skip.len());
+        writeln!(w, "Files to skip: {}", out.files_to_skip.len())?;
     }
+    Ok(())
 }
 
 /// Write full JSON output to stdout
-fn write_json_output(out: &DetectOutput) {
+fn write_json_output(out: &DetectOutput) -> std::io::Result<()> {
     let matrix_val: serde_json::Value =
         serde_json::from_str(out.deploy_matrix).unwrap_or(serde_json::json!({"include":[]}));
     let decisions_val: serde_json::Value =
@@ -519,8 +525,9 @@ fn write_json_output(out: &DetectOutput) {
 
     let stdout = std::io::stdout();
     let mut lock = stdout.lock();
-    let _ = serde_json::to_writer(&mut lock, &output);
-    let _ = writeln!(lock);
+    serde_json::to_writer(&mut lock, &output).map_err(std::io::Error::other)?;
+    writeln!(lock)?;
+    Ok(())
 }
 
 /// Write human-readable text to stdout
@@ -529,63 +536,64 @@ fn write_text_output(
     outputs: &ComputedOutputs,
     interner: &StringInterner,
     processed: &lechange_core::ProcessedResult,
-) {
+) -> std::io::Result<()> {
     let stdout = std::io::stdout();
     let mut w = stdout.lock();
 
-    let _ = writeln!(w, "Le Change Detection Results");
-    let _ = writeln!(w, "===========================");
-    let _ = writeln!(w);
-    let _ = writeln!(w, "Changed files: {}", out.all_changed.len());
+    writeln!(w, "Le Change Detection Results")?;
+    writeln!(w, "===========================")?;
+    writeln!(w)?;
+    writeln!(w, "Changed files: {}", out.all_changed.len())?;
 
     if !out.added.is_empty() {
-        let _ = writeln!(w, "\nAdded ({}):", out.added.len());
+        writeln!(w, "\nAdded ({}):", out.added.len())?;
         for f in out.added {
-            let _ = writeln!(w, "  + {f}");
+            writeln!(w, "  + {f}")?;
         }
     }
 
     if !out.modified.is_empty() {
-        let _ = writeln!(w, "\nModified ({}):", out.modified.len());
+        writeln!(w, "\nModified ({}):", out.modified.len())?;
         for f in out.modified {
-            let _ = writeln!(w, "  ~ {f}");
+            writeln!(w, "  ~ {f}")?;
         }
     }
 
     if !out.deleted.is_empty() {
-        let _ = writeln!(w, "\nDeleted ({}):", out.deleted.len());
+        writeln!(w, "\nDeleted ({}):", out.deleted.len())?;
         for f in out.deleted {
-            let _ = writeln!(w, "  - {f}");
+            writeln!(w, "  - {f}")?;
         }
     }
 
     if !outputs.group_deploy_decisions.is_empty() {
-        let _ = writeln!(w, "\nDeploy Decisions:");
+        writeln!(w, "\nDeploy Decisions:")?;
         for d in &outputs.group_deploy_decisions {
             let key = interner.resolve(d.key).unwrap_or("?");
             let action = match d.action {
                 GroupDeployAction::Deploy => "DEPLOY",
                 GroupDeployAction::Skip => "skip",
             };
-            let _ = writeln!(w, "  [{action}] {key} ({} files)", d.total_files);
+            writeln!(w, "  [{action}] {key} ({} files)", d.total_files)?;
         }
     }
 
     if let Some(ref ci) = processed.ci_decision {
         if !ci.files_to_rebuild.is_empty() {
-            let _ = writeln!(w, "\nFiles to rebuild: {}", ci.files_to_rebuild.len());
+            writeln!(w, "\nFiles to rebuild: {}", ci.files_to_rebuild.len())?;
         }
         if !ci.files_to_skip.is_empty() {
-            let _ = writeln!(w, "Files to skip: {}", ci.files_to_skip.len());
+            writeln!(w, "Files to skip: {}", ci.files_to_skip.len())?;
         }
     }
 
     if !processed.diagnostics.is_empty() {
-        let _ = writeln!(w, "\nDiagnostics:");
+        writeln!(w, "\nDiagnostics:")?;
         for d in &processed.diagnostics {
-            let _ = writeln!(w, "  [{:?}] {}", d.severity, d.message);
+            writeln!(w, "  [{:?}] {}", d.severity, d.message)?;
         }
     }
 
-    let _ = writeln!(w, "\nHas deployable changes: {}", out.has_changes);
+    writeln!(w, "\nHas deployable changes: {}", out.has_changes)?;
+    Ok(())
 }

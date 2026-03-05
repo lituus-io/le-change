@@ -10,7 +10,7 @@ fuzz_target!(|data: &[u8]| {
         let lines: Vec<&str> = text.lines().collect();
 
         // Test various config fields with arbitrary input
-        if let Some(&base_sha) = lines.get(0) {
+        if let Some(&base_sha) = lines.first() {
             let config = InputConfig {
                 base_sha: Some(Cow::Borrowed(base_sha)),
                 ..Default::default()
@@ -23,13 +23,13 @@ fuzz_target!(|data: &[u8]| {
 
         // Test with pattern lists
         if lines.len() > 1 {
-            let patterns: Vec<String> = lines.iter()
+            let patterns: Vec<Cow<'_, str>> = lines.iter()
                 .take(10)
-                .map(|s| s.to_string())
+                .map(|s| Cow::Borrowed(*s))
                 .collect();
 
             let config = InputConfig {
-                files: Some(Cow::Owned(patterns.clone())),
+                files: Some(patterns),
                 ..Default::default()
             };
 
@@ -46,11 +46,11 @@ fuzz_target!(|data: &[u8]| {
                 include_all_old_new_renamed_files: data[0] & 1 == 1,
                 write_output_files: data[1] & 1 == 1,
                 include_submodules: data[2] & 1 == 1,
-                exclude_submodules: data[3] & 1 == 1,
-                json: data[4] & 1 == 1,
-                quotepath: data[5] & 1 == 1,
-                negation_first: data[6] & 1 == 1,
-                safe_output: data[7] & 1 == 1,
+                json: data[3] & 1 == 1,
+                quotepath: data[4] & 1 == 1,
+                negation_patterns_first: data[5] & 1 == 1,
+                safe_output: data[6] & 1 == 1,
+                escape_json: data[7] & 1 == 1,
                 ..Default::default()
             };
 
@@ -60,18 +60,18 @@ fuzz_target!(|data: &[u8]| {
         }
 
         // Test numeric fields
-        if data.len() >= 12 {
+        if data.len() >= 8 {
             let fetch_depth = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-            let since_last_remote_commit = data[4] & 1 == 1;
+            let files_ancestor_lookup_depth = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
 
             let config = InputConfig {
                 fetch_depth,
-                since_last_remote_commit,
+                files_ancestor_lookup_depth,
                 ..Default::default()
             };
 
             let _ = config.fetch_depth;
-            let _ = config.since_last_remote_commit;
+            let _ = config.files_ancestor_lookup_depth;
         }
 
         // Test diff_filter field with arbitrary characters
