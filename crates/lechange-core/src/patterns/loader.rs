@@ -114,8 +114,14 @@ impl PatternLoader {
 
     /// Discover groups from a template by scanning the filesystem.
     ///
-    /// For each non-hidden subdirectory under `scan_dir`, creates a PatternGroup
-    /// with the template pattern instantiated for that directory.
+    /// When the template suffix contains `**` (e.g. `stacks/{group}/**`), scans
+    /// only direct children of `scan_dir` — each top-level directory becomes a group.
+    ///
+    /// When the suffix does NOT contain `**` (e.g. `stacks/{group}/Pulumi.yaml`),
+    /// recursively walks the directory tree to find all paths where the suffix matches
+    /// an existing file. This allows `{group}` to capture multi-segment paths like
+    /// `cloudsql/bq_to_cloudsql/gcs_to_sql`. Each discovered directory becomes a group
+    /// with a `/**` pattern covering its entire subtree.
     pub fn discover_groups_from_template(
         template: &GroupByTemplate<'_>,
         repo_root: &Path,
@@ -130,8 +136,45 @@ impl PatternLoader {
             )));
         }
 
+        let needs_recursive = !template.suffix.contains("**");
+
         let mut groups = Vec::new();
-        let entries = std::fs::read_dir(&scan_path).map_err(|e| {
+
+        if needs_recursive {
+            Self::discover_groups_recursive(
+                &scan_path,
+                &scan_path,
+                template,
+                repo_root,
+                &mut groups,
+                negation_first,
+                key_mode,
+            )?;
+        } else {
+            Self::discover_groups_single_level(
+                &scan_path,
+                template,
+                &mut groups,
+                negation_first,
+                key_mode,
+            )?;
+        }
+
+        // Sort by name for deterministic order
+        groups.sort_by(|a, b| a.name.cmp(&b.name));
+
+        Ok(groups)
+    }
+
+    /// Single-level directory scan (original behavior for `**` suffixes).
+    fn discover_groups_single_level(
+        scan_path: &Path,
+        template: &GroupByTemplate<'_>,
+        groups: &mut Vec<PatternGroup>,
+        negation_first: bool,
+        key_mode: GroupByKey,
+    ) -> Result<()> {
+        let entries = std::fs::read_dir(scan_path).map_err(|e| {
             Error::Config(format!(
                 "Failed to read directory '{}': {}",
                 scan_path.display(),
@@ -162,34 +205,113 @@ impl PatternLoader {
             // Build the pattern: prefix + dir_name + suffix
             let pattern = format!("{}{}{}", template.prefix, dir_name_str, template.suffix);
 
-            // Build the group key based on key_mode
-            let key = match key_mode {
-                GroupByKey::Name => dir_name_str.to_string(),
-                GroupByKey::Path => {
-                    if template.scan_dir == "." {
-                        dir_name_str.to_string()
-                    } else {
-                        format!("{}/{}", template.scan_dir, dir_name_str)
-                    }
-                }
-                GroupByKey::Hash => {
-                    // 8-char hex hash of the directory name
-                    use std::collections::hash_map::DefaultHasher;
-                    use std::hash::{Hash, Hasher};
-                    let mut hasher = DefaultHasher::new();
-                    dir_name_str.hash(&mut hasher);
-                    format!("{:08x}", hasher.finish() as u32)
-                }
-            };
+            let key = Self::build_group_key(&dir_name_str, &dir_name_str, template, key_mode);
 
             let matcher = PatternMatcher::new(&[pattern.as_str()], &[], negation_first)?;
             groups.push(PatternGroup { name: key, matcher });
         }
 
-        // Sort by name for deterministic order
-        groups.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(())
+    }
 
-        Ok(groups)
+    /// Recursive directory walk for suffix patterns without `**`.
+    ///
+    /// Finds all directories under `scan_root` where `prefix + relative_path + suffix`
+    /// matches an existing file. Each match becomes a group with a `/**` subtree pattern.
+    fn discover_groups_recursive(
+        current: &Path,
+        scan_root: &Path,
+        template: &GroupByTemplate<'_>,
+        repo_root: &Path,
+        groups: &mut Vec<PatternGroup>,
+        negation_first: bool,
+        key_mode: GroupByKey,
+    ) -> Result<()> {
+        let entries = match std::fs::read_dir(current) {
+            Ok(e) => e,
+            Err(_) => return Ok(()),
+        };
+
+        for entry in entries {
+            let entry = entry
+                .map_err(|e| Error::Config(format!("Failed to read directory entry: {}", e)))?;
+
+            let ft = entry
+                .file_type()
+                .map_err(|e| Error::Config(format!("Failed to read file type: {}", e)))?;
+
+            if !ft.is_dir() {
+                continue;
+            }
+
+            let dir_name = entry.file_name();
+            let dir_name_str = dir_name.to_string_lossy();
+
+            if dir_name_str.starts_with('.') {
+                continue;
+            }
+
+            let dir_path = entry.path();
+            let relative = dir_path
+                .strip_prefix(scan_root)
+                .unwrap_or(dir_path.as_path());
+            let relative_str = relative.to_string_lossy();
+
+            // Check if prefix + relative + suffix exists as a file
+            let candidate = format!("{}{}{}", template.prefix, relative_str, template.suffix);
+            let candidate_path = repo_root.join(&candidate);
+
+            if candidate_path.exists() && !candidate_path.is_dir() {
+                // Found a match — create a group covering the entire subtree
+                let subtree_pattern = format!("{}{}/**", template.prefix, relative_str);
+
+                let key =
+                    Self::build_group_key(&relative_str, &relative_str, template, key_mode);
+
+                let matcher =
+                    PatternMatcher::new(&[subtree_pattern.as_str()], &[], negation_first)?;
+                groups.push(PatternGroup { name: key, matcher });
+            }
+
+            // Continue recursing into subdirectories
+            Self::discover_groups_recursive(
+                &dir_path,
+                scan_root,
+                template,
+                repo_root,
+                groups,
+                negation_first,
+                key_mode,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// Build a group key based on the key mode.
+    fn build_group_key(
+        name: &str,
+        relative_path: &str,
+        template: &GroupByTemplate<'_>,
+        key_mode: GroupByKey,
+    ) -> String {
+        match key_mode {
+            GroupByKey::Name => name.to_string(),
+            GroupByKey::Path => {
+                if template.scan_dir == "." {
+                    relative_path.to_string()
+                } else {
+                    format!("{}/{}", template.scan_dir, relative_path)
+                }
+            }
+            GroupByKey::Hash => {
+                use std::collections::hash_map::DefaultHasher;
+                use std::hash::{Hash, Hasher};
+                let mut hasher = DefaultHasher::new();
+                relative_path.hash(&mut hasher);
+                format!("{:08x}", hasher.finish() as u32)
+            }
+        }
     }
 }
 
@@ -415,6 +537,127 @@ infra:
         // "terraform/" as a glob — it matches the literal directory name
         // (glob behavior: trailing slash matches directory entries)
         assert!(!infra.matcher.matches_sync("stacks/dev/main.tf"));
+    }
+
+    #[test]
+    fn test_discover_groups_recursive_deeply_nested() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Create deeply nested stacks with Pulumi.yaml marker files
+        let paths = [
+            "stacks/dev",
+            "stacks/prod",
+            "stacks/cloudsql/bq_to_cloudsql/gcs_to_sql",
+            "stacks/cloudsql/another_stack",
+            "stacks/networking/vpc",
+        ];
+        for p in &paths {
+            std::fs::create_dir_all(dir.path().join(p)).unwrap();
+            std::fs::write(
+                dir.path().join(p).join("Pulumi.yaml"),
+                "name: test",
+            )
+            .unwrap();
+        }
+
+        let t = PatternLoader::parse_group_by_template("stacks/{group}/Pulumi.yaml").unwrap();
+        assert!(!t.suffix.contains("**")); // triggers recursive mode
+
+        let groups =
+            PatternLoader::discover_groups_from_template(&t, dir.path(), true, GroupByKey::Name)
+                .unwrap();
+
+        let names: Vec<&str> = groups.iter().map(|g| g.name.as_str()).collect();
+        assert_eq!(groups.len(), 5);
+        assert!(names.contains(&"dev"));
+        assert!(names.contains(&"prod"));
+        assert!(names.contains(&"cloudsql/bq_to_cloudsql/gcs_to_sql"));
+        assert!(names.contains(&"cloudsql/another_stack"));
+        assert!(names.contains(&"networking/vpc"));
+    }
+
+    #[test]
+    fn test_discover_groups_recursive_pattern_matching() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("stacks/a/b/c")).unwrap();
+        std::fs::write(
+            dir.path().join("stacks/a/b/c/Pulumi.yaml"),
+            "name: test",
+        )
+        .unwrap();
+        std::fs::create_dir_all(dir.path().join("stacks/dev")).unwrap();
+        std::fs::write(
+            dir.path().join("stacks/dev/Pulumi.yaml"),
+            "name: dev",
+        )
+        .unwrap();
+
+        let t = PatternLoader::parse_group_by_template("stacks/{group}/Pulumi.yaml").unwrap();
+        let groups =
+            PatternLoader::discover_groups_from_template(&t, dir.path(), true, GroupByKey::Name)
+                .unwrap();
+
+        // Groups should match files within their subtree
+        let deep = groups.iter().find(|g| g.name == "a/b/c").unwrap();
+        assert!(deep.matcher.matches_sync("stacks/a/b/c/Pulumi.yaml"));
+        assert!(deep.matcher.matches_sync("stacks/a/b/c/index.ts"));
+        assert!(!deep.matcher.matches_sync("stacks/dev/Pulumi.yaml"));
+
+        let dev = groups.iter().find(|g| g.name == "dev").unwrap();
+        assert!(dev.matcher.matches_sync("stacks/dev/Pulumi.yaml"));
+        assert!(!dev.matcher.matches_sync("stacks/a/b/c/Pulumi.yaml"));
+    }
+
+    #[test]
+    fn test_discover_groups_recursive_path_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("stacks/a/b")).unwrap();
+        std::fs::write(dir.path().join("stacks/a/b/Pulumi.yaml"), "").unwrap();
+
+        let t = PatternLoader::parse_group_by_template("stacks/{group}/Pulumi.yaml").unwrap();
+        let groups =
+            PatternLoader::discover_groups_from_template(&t, dir.path(), true, GroupByKey::Path)
+                .unwrap();
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].name, "stacks/a/b");
+    }
+
+    #[test]
+    fn test_discover_groups_recursive_skips_dirs_without_marker() {
+        let dir = tempfile::tempdir().unwrap();
+        // Only some directories have the marker file
+        std::fs::create_dir_all(dir.path().join("stacks/has_marker")).unwrap();
+        std::fs::write(dir.path().join("stacks/has_marker/Pulumi.yaml"), "").unwrap();
+        std::fs::create_dir_all(dir.path().join("stacks/no_marker")).unwrap();
+        std::fs::write(dir.path().join("stacks/no_marker/other.txt"), "").unwrap();
+
+        let t = PatternLoader::parse_group_by_template("stacks/{group}/Pulumi.yaml").unwrap();
+        let groups =
+            PatternLoader::discover_groups_from_template(&t, dir.path(), true, GroupByKey::Name)
+                .unwrap();
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].name, "has_marker");
+    }
+
+    #[test]
+    fn test_discover_groups_star_star_suffix_stays_single_level() {
+        // Backward compatibility: ** in suffix uses single-level scan
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("stacks/dev/nested")).unwrap();
+        std::fs::create_dir_all(dir.path().join("stacks/prod")).unwrap();
+
+        let t = PatternLoader::parse_group_by_template("stacks/{group}/**").unwrap();
+        let groups =
+            PatternLoader::discover_groups_from_template(&t, dir.path(), true, GroupByKey::Name)
+                .unwrap();
+
+        // Should only find dev and prod (direct children), NOT dev/nested
+        let names: Vec<&str> = groups.iter().map(|g| g.name.as_str()).collect();
+        assert_eq!(groups.len(), 2);
+        assert!(names.contains(&"dev"));
+        assert!(names.contains(&"prod"));
     }
 
     #[test]
