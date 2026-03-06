@@ -735,6 +735,14 @@ mod tests {
     async fn test_processor_basic_flow() {
         let (_dir, repo_path) = create_test_repo();
 
+        // Capture base SHA before second commit
+        let base_output = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&repo_path)
+            .output()
+            .unwrap();
+        let base_sha = String::from_utf8_lossy(&base_output.stdout).trim().to_string();
+
         // Create second commit
         fs::write(repo_path.join("file2.txt"), "content2").unwrap();
         std::process::Command::new("git")
@@ -748,12 +756,25 @@ mod tests {
             .output()
             .unwrap();
 
+        let head_output = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&repo_path)
+            .output()
+            .unwrap();
+        let head_sha = String::from_utf8_lossy(&head_output.stdout).trim().to_string();
+
         // Change to repo directory
         std::env::set_current_dir(&repo_path).unwrap();
 
         let repo = GitRepository::discover(&repo_path).unwrap();
         let interner = StringInterner::new();
-        let config = InputConfig::default();
+        // Use explicit SHAs to avoid CI environment variables (GITHUB_EVENT_PATH)
+        // affecting SHA resolution
+        let config = InputConfig {
+            base_sha: Some(std::borrow::Cow::Owned(base_sha)),
+            sha: Some(std::borrow::Cow::Owned(head_sha)),
+            ..Default::default()
+        };
 
         let processor = FileProcessor::new(&repo, &interner, &config);
         let result = processor.process().await.unwrap();

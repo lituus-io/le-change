@@ -28,7 +28,6 @@
 //! # }
 //! ```
 
-#![feature(type_alias_impl_trait)]
 #![feature(impl_trait_in_assoc_type)]
 #![warn(missing_docs, rust_2018_idioms)]
 
