@@ -741,7 +741,9 @@ mod tests {
             .current_dir(&repo_path)
             .output()
             .unwrap();
-        let base_sha = String::from_utf8_lossy(&base_output.stdout).trim().to_string();
+        let base_sha = String::from_utf8_lossy(&base_output.stdout)
+            .trim()
+            .to_string();
 
         // Create second commit
         fs::write(repo_path.join("file2.txt"), "content2").unwrap();
@@ -761,7 +763,9 @@ mod tests {
             .current_dir(&repo_path)
             .output()
             .unwrap();
-        let head_sha = String::from_utf8_lossy(&head_output.stdout).trim().to_string();
+        let head_sha = String::from_utf8_lossy(&head_output.stdout)
+            .trim()
+            .to_string();
 
         // Change to repo directory
         std::env::set_current_dir(&repo_path).unwrap();

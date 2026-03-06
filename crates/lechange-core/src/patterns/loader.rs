@@ -265,8 +265,7 @@ impl PatternLoader {
                 // Found a match — create a group covering the entire subtree
                 let subtree_pattern = format!("{}{}/**", template.prefix, relative_str);
 
-                let key =
-                    Self::build_group_key(&relative_str, &relative_str, template, key_mode);
+                let key = Self::build_group_key(&relative_str, &relative_str, template, key_mode);
 
                 let matcher =
                     PatternMatcher::new(&[subtree_pattern.as_str()], &[], negation_first)?;
@@ -553,11 +552,7 @@ infra:
         ];
         for p in &paths {
             std::fs::create_dir_all(dir.path().join(p)).unwrap();
-            std::fs::write(
-                dir.path().join(p).join("Pulumi.yaml"),
-                "name: test",
-            )
-            .unwrap();
+            std::fs::write(dir.path().join(p).join("Pulumi.yaml"), "name: test").unwrap();
         }
 
         let t = PatternLoader::parse_group_by_template("stacks/{group}/Pulumi.yaml").unwrap();
@@ -580,17 +575,9 @@ infra:
     fn test_discover_groups_recursive_pattern_matching() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("stacks/a/b/c")).unwrap();
-        std::fs::write(
-            dir.path().join("stacks/a/b/c/Pulumi.yaml"),
-            "name: test",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("stacks/a/b/c/Pulumi.yaml"), "name: test").unwrap();
         std::fs::create_dir_all(dir.path().join("stacks/dev")).unwrap();
-        std::fs::write(
-            dir.path().join("stacks/dev/Pulumi.yaml"),
-            "name: dev",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("stacks/dev/Pulumi.yaml"), "name: dev").unwrap();
 
         let t = PatternLoader::parse_group_by_template("stacks/{group}/Pulumi.yaml").unwrap();
         let groups =
