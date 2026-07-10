@@ -85,6 +85,7 @@ pub fn escape_json_into(s: &str, buf: &mut String) {
 ///
 /// When `include_reason` is true, adds `"action":"deploy","reason":"new_change"` fields.
 /// When `include_concurrency` is true, adds `"concurrency_blocked":bool,"concurrency_blocked_by":N` fields.
+///
 /// Format vanished files as a JSON array of {path, last_seen_sha} objects.
 /// Zero-serde, same escaping discipline as the rest of this module.
 pub fn format_vanished_json<'a, F>(vanished: &[crate::types::VanishedFile], resolve: F) -> String
@@ -112,6 +113,10 @@ where
     buf
 }
 
+/// Format the deploy matrix for GitHub Actions `strategy.matrix`.
+///
+/// Deploy entries are always emitted; Destroy entries are always emitted with
+/// `action`/`reason`/`last_seen_sha`; Skip entries only with `include_reason`.
 pub fn format_deploy_matrix<'a, F>(
     decisions: &[crate::types::GroupDeployDecision],
     resolve: F,

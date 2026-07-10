@@ -49,6 +49,9 @@ pub struct PyChangedFiles {
     // Diagnostics
     diagnostics: Vec<PyDiagnostic>,
 
+    // Vanished files (detect_vanished)
+    vanished: Vec<(String, String)>,
+
     // Deploy decisions
     group_deploy_decisions: Vec<PyGroupDeployDecision>,
     deploy_matrix_json: String,
@@ -85,6 +88,8 @@ struct PyGroupDeployDecision {
     count: usize,
     concurrency_blocked: bool,
     concurrency_blocked_by: u32,
+    vanished: Vec<String>,
+    last_seen_sha: Option<String>,
 }
 
 #[pymethods]
@@ -227,6 +232,34 @@ impl PyChangedFiles {
     // === Deploy decisions ===
 
     #[getter]
+    fn vanished_files<'py>(&self, py: Python<'py>) -> Bound<'py, PyList> {
+        let paths: Vec<&str> = self.vanished.iter().map(|(p, _)| p.as_str()).collect();
+        PyList::new(py, paths).unwrap()
+    }
+
+    #[getter]
+    fn vanished_files_count(&self) -> usize {
+        self.vanished.len()
+    }
+
+    #[getter]
+    fn any_vanished(&self) -> bool {
+        !self.vanished.is_empty()
+    }
+
+    #[getter]
+    fn vanished<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        let list = PyList::empty(py);
+        for (path, sha) in &self.vanished {
+            let dict = PyDict::new(py);
+            dict.set_item("path", path)?;
+            dict.set_item("last_seen_sha", sha)?;
+            list.append(dict)?;
+        }
+        Ok(list)
+    }
+
+    #[getter]
     fn deploy_decisions<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
         let list = PyList::empty(py);
         for d in &self.group_deploy_decisions {
@@ -238,6 +271,12 @@ impl PyChangedFiles {
             dict.set_item("count", d.count)?;
             dict.set_item("concurrency_blocked", d.concurrency_blocked)?;
             dict.set_item("concurrency_blocked_by", d.concurrency_blocked_by)?;
+            if !d.vanished.is_empty() {
+                dict.set_item("vanished", PyList::new(py, &d.vanished).unwrap())?;
+            }
+            if let Some(sha) = &d.last_seen_sha {
+                dict.set_item("last_seen_sha", sha)?;
+            }
             list.append(dict)?;
         }
         Ok(list)
@@ -578,6 +617,15 @@ impl PyChangedFiles {
                     .filter_map(|&s| interner.resolve(s).map(&resolve_path))
                     .collect();
                 let count = files.len();
+                let vanished: Vec<String> = d
+                    .vanished_files
+                    .iter()
+                    .filter_map(|v| interner.resolve(v.path).map(&resolve_path))
+                    .collect();
+                let last_seen_sha = d
+                    .reconstruct_sha
+                    .and_then(|s| interner.resolve(s))
+                    .map(|s| s.to_string());
                 PyGroupDeployDecision {
                     key: interner.resolve(d.key).unwrap_or("").to_string(),
                     action,
@@ -586,6 +634,8 @@ impl PyChangedFiles {
                     count,
                     concurrency_blocked: d.concurrency_blocked,
                     concurrency_blocked_by: d.concurrency_blocked_by,
+                    vanished,
+                    last_seen_sha,
                 }
             })
             .collect();
@@ -612,6 +662,16 @@ impl PyChangedFiles {
                     category,
                     message: d.message,
                 }
+            })
+            .collect();
+
+        let vanished: Vec<(String, String)> = result
+            .vanished_files
+            .iter()
+            .filter_map(|v| {
+                let path = interner.resolve(v.path).map(&resolve_path)?;
+                let sha = interner.resolve(v.last_seen_sha)?.to_string();
+                Some((path, sha))
             })
             .collect();
 
@@ -647,6 +707,7 @@ impl PyChangedFiles {
             successful_jobs,
             rebuild_reasons,
             diagnostics,
+            vanished,
             group_deploy_decisions,
             deploy_matrix_json,
             _has_deployable_groups,

@@ -81,6 +81,20 @@ struct DetectArgs {
     #[arg(long, env = "LECHANGE_DEPLOY_MATRIX_INCLUDE_CONCURRENCY")]
     deploy_matrix_include_concurrency: bool,
 
+    /// Detect files added then removed within the PR history (base..head
+    /// first-parent walk); requires sufficient clone depth (fetch-depth: 0)
+    #[arg(long, env = "LECHANGE_DETECT_VANISHED")]
+    detect_vanished: bool,
+
+    /// Max commits the vanished-detection walk visits (0 = unlimited)
+    #[arg(long, env = "LECHANGE_VANISHED_MAX_COMMITS", default_value_t = 500)]
+    vanished_max_commits: u32,
+
+    /// Emit Destroy deploy-matrix entries for groups whose files were all
+    /// deleted at the endpoint diff (reconstruct_sha = base SHA)
+    #[arg(long, env = "LECHANGE_DELETED_TO_DESTROY")]
+    deleted_to_destroy: bool,
+
     /// GitHub token for API access
     #[arg(long, env = "GITHUB_TOKEN")]
     token: Option<String>,
@@ -177,6 +191,9 @@ fn build_config(args: &DetectArgs) -> InputConfig<'_> {
         .with_deploy_matrix_include_reason(args.deploy_matrix_include_reason)
         .with_deploy_matrix_include_concurrency(args.deploy_matrix_include_concurrency)
         .with_token(clean_opt(&args.token))
+        .with_detect_vanished(args.detect_vanished)
+        .with_vanished_max_commits(args.vanished_max_commits)
+        .with_deleted_to_destroy(args.deleted_to_destroy)
 }
 
 fn run_detect(args: DetectArgs) -> i32 {
@@ -217,11 +234,12 @@ fn run_detect(args: DetectArgs) -> i32 {
             .workflow_result
             .as_ref()
             .map(|wr| &wr.blocked_groups);
-        let outputs = ComputedOutputs::compute_with_concurrency(
+        let outputs = ComputedOutputs::compute_full(
             &processed,
             false,
             blocked_groups,
             Some(&interner),
+            args.deleted_to_destroy,
         );
 
         Ok::<_, lechange_core::Error>((processed, outputs, interner))
@@ -288,6 +306,16 @@ fn run_detect(args: DetectArgs) -> i32 {
         })
         .unwrap_or_default();
 
+    let vanished: Vec<&str> = processed
+        .vanished_files
+        .iter()
+        .filter_map(|v| interner.resolve(v.path))
+        .collect();
+    let vanished_json = lechange_core::output::json_format::format_vanished_json(
+        &processed.vanished_files,
+        resolve,
+    );
+
     let deploy_matrix = format_deploy_matrix(
         &outputs.group_deploy_decisions,
         resolve,
@@ -296,7 +324,9 @@ fn run_detect(args: DetectArgs) -> i32 {
         include_concurrency,
     );
 
-    let has_changes = !all_changed.is_empty() || outputs.has_deployable_groups();
+    let has_changes = !all_changed.is_empty()
+        || outputs.has_deployable_groups()
+        || outputs.has_destroyable_groups();
     let any_changed = !all_changed.is_empty();
 
     // Diagnostics
@@ -358,6 +388,8 @@ fn run_detect(args: DetectArgs) -> i32 {
         files_to_rebuild: &files_to_rebuild,
         files_to_skip: &files_to_skip,
         diagnostics_json: &diagnostics_json,
+        vanished: &vanished,
+        vanished_json: &vanished_json,
     };
 
     let write_result = match output_format {
@@ -392,6 +424,8 @@ struct DetectOutput<'a> {
     files_to_rebuild: &'a [&'a str],
     files_to_skip: &'a [&'a str],
     diagnostics_json: &'a str,
+    vanished: &'a [&'a str],
+    vanished_json: &'a str,
 }
 
 /// Write outputs using GitHub Actions multiline syntax to $GITHUB_OUTPUT
@@ -434,6 +468,7 @@ fn write_gha_output(out: &DetectOutput) -> std::io::Result<()> {
         ("added_files", out.added),
         ("modified_files", out.modified),
         ("deleted_files", out.deleted),
+        ("vanished_files", out.vanished),
         ("files_to_rebuild", out.files_to_rebuild),
         ("files_to_skip", out.files_to_skip),
     ] {
@@ -447,6 +482,9 @@ fn write_gha_output(out: &DetectOutput) -> std::io::Result<()> {
     writeln!(f, "{delim}")?;
     writeln!(f, "diagnostics<<{delim}")?;
     writeln!(f, "{}", safe_output_escape(out.diagnostics_json))?;
+    writeln!(f, "{delim}")?;
+    writeln!(f, "vanished<<{delim}")?;
+    writeln!(f, "{}", safe_output_escape(out.vanished_json))?;
     writeln!(f, "{delim}")?;
 
     // Summary to stdout (visible in job log)
@@ -462,6 +500,13 @@ fn write_gha_output(out: &DetectOutput) -> std::io::Result<()> {
         out.modified.len(),
         out.deleted.len()
     )?;
+    if !out.vanished.is_empty() {
+        writeln!(
+            w,
+            "Vanished (added then removed in range): {}",
+            out.vanished.len()
+        )?;
+    }
     writeln!(w, "Has deployable changes: {}", out.has_changes)?;
     if !out.files_to_rebuild.is_empty() {
         writeln!(w, "Files to rebuild: {}", out.files_to_rebuild.len())?;
@@ -480,6 +525,8 @@ fn write_json_output(out: &DetectOutput) -> std::io::Result<()> {
         serde_json::from_str(out.deploy_decisions_json).unwrap_or(serde_json::json!([]));
     let diags_val: serde_json::Value =
         serde_json::from_str(out.diagnostics_json).unwrap_or(serde_json::json!([]));
+    let vanished_val: serde_json::Value =
+        serde_json::from_str(out.vanished_json).unwrap_or(serde_json::json!([]));
 
     let output = serde_json::json!({
         "matrix": matrix_val,
@@ -490,6 +537,8 @@ fn write_json_output(out: &DetectOutput) -> std::io::Result<()> {
         "added_files": out.added,
         "modified_files": out.modified,
         "deleted_files": out.deleted,
+        "vanished_files": out.vanished,
+        "vanished": vanished_val,
         "deploy_decisions": decisions_val,
         "files_to_rebuild": out.files_to_rebuild,
         "files_to_skip": out.files_to_skip,
@@ -595,6 +644,9 @@ mod tests {
             sha: None,
             output_format: None,
             repo_path: None,
+            detect_vanished: false,
+            vanished_max_commits: 500,
+            deleted_to_destroy: false,
         }
     }
 

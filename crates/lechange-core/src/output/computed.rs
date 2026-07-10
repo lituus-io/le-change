@@ -912,10 +912,11 @@ mod vanished_decision_tests {
     }
 
     fn base_result(interner: &StringInterner) -> ProcessedResult {
-        let mut r = ProcessedResult::default();
-        r.base_sha = Some(interner.intern("basesha"));
-        r.head_sha = Some(interner.intern("headsha"));
-        r
+        ProcessedResult {
+            base_sha: Some(interner.intern("basesha")),
+            head_sha: Some(interner.intern("headsha")),
+            ..Default::default()
+        }
     }
 
     #[test]

@@ -626,6 +626,38 @@ impl<'a> FileProcessor<'a> {
                 &pathspecs,
                 self.config.vanished_max_commits,
             )
+        } else if let Some(template) = self.config.files_group_by.as_deref().filter(|_| {
+            self.config.files_yaml.is_none() && self.config.files_yaml_from_source_file.is_none()
+        }) {
+            // Group discovery scans the working tree at head, so a vanished
+            // stack's group (or the whole scan dir) may not be discovered at
+            // all. The template itself defines what belongs to a group —
+            // derive the predicate from it by substituting {group} with
+            // single- and multi-segment wildcards. This is a superset of
+            // every discovered group's matcher.
+            let single = template.replace("{group}", "*");
+            let multi = template.replace("{group}", "**");
+            match PatternMatcher::new(
+                &[single.as_str(), multi.as_str()],
+                &[],
+                self.config.negation_patterns_first,
+            ) {
+                Ok(template_matcher) => detector.detect_sync(
+                    base_sha,
+                    head_sha,
+                    |p| template_matcher.matches_sync(p),
+                    &pathspecs,
+                    self.config.vanished_max_commits,
+                ),
+                Err(e) => {
+                    result.diagnostics.push(Diagnostic {
+                        severity: DiagnosticSeverity::SoftError,
+                        category: DiagnosticCategory::VanishedDetection,
+                        message: format!("template predicate build failed (soft): {}", e),
+                    });
+                    return;
+                }
+            }
         } else if !yaml_groups.is_empty() {
             detector.detect_sync(
                 base_sha,
