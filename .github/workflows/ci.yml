@@ -46,8 +46,15 @@ jobs:
       - name: Build
         run: cargo build -p le-change -p lechange-cli --locked
 
+      # Tests are hermetic: event-aware SHA resolution reads GITHUB_* env,
+      # which on a runner names refs (PR branch, origin/base) that do not
+      # exist in test fixture repositories. Strip the event identity so unit
+      # and integration tests behave identically everywhere.
       - name: Run tests
-        run: cargo test -p le-change -p lechange-cli --locked
+        shell: bash
+        run: |
+          unset GITHUB_EVENT_NAME GITHUB_HEAD_REF GITHUB_BASE_REF                 GITHUB_REF GITHUB_REF_NAME GITHUB_SHA GITHUB_EVENT_PATH || true
+          cargo test -p le-change -p lechange-cli --locked
 
       - name: Clippy
         run: cargo clippy -p le-change -p lechange-cli --all-targets --locked -- -D warnings

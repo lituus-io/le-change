@@ -255,7 +255,10 @@ impl PatternLoader {
             let relative = dir_path
                 .strip_prefix(scan_root)
                 .unwrap_or(dir_path.as_path());
-            let relative_str = relative.to_string_lossy();
+            // Windows: strip_prefix yields backslash separators, which would
+            // corrupt both the glob pattern and the group key. Normalize.
+            let relative_lossy = relative.to_string_lossy();
+            let relative_str = crate::platform::PathUtil::to_posix(&relative_lossy);
 
             // Check if prefix + relative + suffix exists as a file
             let candidate = format!("{}{}{}", template.prefix, relative_str, template.suffix);
