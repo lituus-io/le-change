@@ -287,6 +287,58 @@ impl PatternLoader {
         Ok(())
     }
 
+    /// Synthesize groups for template-matching paths whose directories no
+    /// longer exist on disk (vanished or fully-deleted stacks). Filesystem
+    /// discovery cannot see them, so Destroy deploy entries would otherwise
+    /// never appear. Appends only groups whose key is not already present;
+    /// re-sorts for deterministic order.
+    pub fn synthesize_groups_for_paths<'p>(
+        template: &GroupByTemplate<'_>,
+        key_mode: GroupByKey,
+        paths: impl Iterator<Item = &'p str>,
+        negation_first: bool,
+        groups: &mut Vec<PatternGroup>,
+    ) -> Result<()> {
+        let single_level = template.suffix.contains("**");
+        for path in paths {
+            let Some(rel) = path.strip_prefix(template.prefix) else {
+                continue;
+            };
+            let (group_rel, pattern) = if single_level {
+                // e.g. template `stacks/{group}/**`: group = first component
+                if !rel.contains('/') {
+                    continue; // file sits at the scan root, not in a group dir
+                }
+                let Some(first) = rel.split('/').next().filter(|c| !c.is_empty()) else {
+                    continue;
+                };
+                (
+                    first.to_string(),
+                    format!("{}{}{}", template.prefix, first, template.suffix),
+                )
+            } else {
+                // e.g. template `stacks/{group}/Pulumi.yaml`: path must equal
+                // prefix + rel_dir + suffix; group covers the subtree
+                let Some(rel_dir) = rel.strip_suffix(template.suffix).filter(|d| !d.is_empty())
+                else {
+                    continue;
+                };
+                (
+                    rel_dir.to_string(),
+                    format!("{}{}/**", template.prefix, rel_dir),
+                )
+            };
+            let key = Self::build_group_key(&group_rel, &group_rel, template, key_mode);
+            if groups.iter().any(|g| g.name == key) {
+                continue;
+            }
+            let matcher = PatternMatcher::new(&[pattern.as_str()], &[], negation_first)?;
+            groups.push(PatternGroup { name: key, matcher });
+        }
+        groups.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(())
+    }
+
     /// Build a group key based on the key mode.
     fn build_group_key(
         name: &str,

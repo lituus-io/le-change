@@ -50,6 +50,8 @@ impl<'a> FileProcessor<'a> {
         let repo_path = self.git_ops.path();
         let sha_resolver = ShaResolver::new(repo_path);
         let (base_sha, head_sha) = sha_resolver.resolve_event_aware(self.config)?;
+        result.base_sha = Some(self.interner.intern(&base_sha));
+        result.head_sha = Some(self.interner.intern(&head_sha));
 
         // Step 2b: Skip if same SHA
         if self.config.skip_same_sha && base_sha == head_sha {
@@ -110,7 +112,7 @@ impl<'a> FileProcessor<'a> {
         }
 
         // Step 5a: Load YAML groups (if configured) — needed by both workflow tracker and group filtering
-        let yaml_groups = self.load_yaml_groups(&mut result);
+        let mut yaml_groups = self.load_yaml_groups(&mut result);
 
         // Step 5b: Workflow intelligence (pass loaded groups to tracker for job-level partitioning)
         if self.config.track_workflow_failures {
@@ -155,8 +157,76 @@ impl<'a> FileProcessor<'a> {
             }
         }
 
-        // Step 6: Load patterns and partition files
+        // Step 6 prep: the pattern matcher is also the vanished-detection
+        // predicate, so build it before step 5c.
         let matcher = self.build_pattern_matcher()?;
+
+        // Step 5c: vanished-file detection (files added then removed within
+        // base..head — invisible to the endpoint diff). Soft-fails only.
+        if self.config.detect_vanished {
+            self.detect_vanished_files(
+                &base_sha,
+                &head_sha,
+                matcher.as_ref(),
+                &yaml_groups,
+                &mut result,
+            );
+        }
+
+        // Step 5d: synthesize groups for vanished / endpoint-deleted paths
+        // whose directories no longer exist on disk (template discovery can't
+        // see them), so they can carry Destroy deploy decisions.
+        let groups_from_template = self.config.files_group_by.is_some()
+            && self.config.files_yaml.is_none()
+            && self.config.files_yaml_from_source_file.is_none();
+        if groups_from_template && (self.config.detect_vanished || self.config.deleted_to_destroy) {
+            let mut candidates: Vec<&str> = result
+                .vanished_files
+                .iter()
+                .filter_map(|v| self.interner.resolve(v.path))
+                .collect();
+            if self.config.deleted_to_destroy {
+                candidates.extend(result.all_files.iter().filter_map(|f| {
+                    (f.change_type == crate::types::ChangeType::Deleted)
+                        .then(|| self.interner.resolve(f.path))
+                        .flatten()
+                }));
+            }
+            if !candidates.is_empty() {
+                if let Some(ref template_str) = self.config.files_group_by {
+                    match PatternLoader::parse_group_by_template(template_str) {
+                        Ok(template) => {
+                            let key_mode = self
+                                .config
+                                .files_group_by_key
+                                .as_deref()
+                                .map(crate::types::GroupByKey::parse)
+                                .unwrap_or_default();
+                            if let Err(e) = PatternLoader::synthesize_groups_for_paths(
+                                &template,
+                                key_mode,
+                                candidates.into_iter(),
+                                self.config.negation_patterns_first,
+                                &mut yaml_groups,
+                            ) {
+                                result.diagnostics.push(Diagnostic {
+                                    severity: DiagnosticSeverity::SoftError,
+                                    category: DiagnosticCategory::VanishedDetection,
+                                    message: format!("group synthesis failed (soft): {}", e),
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            result.diagnostics.push(Diagnostic {
+                                severity: DiagnosticSeverity::SoftError,
+                                category: DiagnosticCategory::VanishedDetection,
+                                message: format!("group template parse failed (soft): {}", e),
+                            });
+                        }
+                    }
+                }
+            }
+        }
 
         if let Some(matcher) = &matcher {
             let (matched, unmatched) =
@@ -203,10 +273,18 @@ impl<'a> FileProcessor<'a> {
                                 .unwrap_or(false)
                         })
                         .collect();
+                    let vanished: Vec<u32> = (0..result.vanished_files.len() as u32)
+                        .filter(|&i| {
+                            self.interner
+                                .resolve(result.vanished_files[i as usize].path)
+                                .map(|path| group.matcher.matches_sync(path))
+                                .unwrap_or(false)
+                        })
+                        .collect();
                     GroupResult {
                         key: self.interner.intern(&group.name),
                         matched_indices: matched,
-                        vanished_indices: Vec::new(),
+                        vanished_indices: vanished,
                     }
                 })
                 .collect();
@@ -512,6 +590,99 @@ impl<'a> FileProcessor<'a> {
     /// Load YAML groups once for reuse by both workflow tracker and group filtering.
     ///
     /// Priority: files_yaml > files_group_by. If both set, YAML wins with a diagnostic.
+    /// Step 5c: run the vanished-file history walk. Every failure is a
+    /// diagnostic, never a hard error — this is opt-in enrichment and must
+    /// not break CI.
+    fn detect_vanished_files(
+        &self,
+        base_sha: &str,
+        head_sha: &str,
+        matcher: Option<&PatternMatcher>,
+        yaml_groups: &[PatternGroup],
+        result: &mut ProcessedResult,
+    ) {
+        use crate::git::vanished::{pathspec_prefixes, VanishedDetector};
+
+        // Predicate + coarse pathspec prefixes, by configuration priority:
+        // explicit `files` patterns, else group matchers, else skip.
+        let mut pattern_refs: Vec<&str> = Vec::new();
+        if let Some(files) = &self.config.files {
+            pattern_refs.extend(files.iter().map(|c| c.as_ref()));
+        }
+        let pathspecs: Vec<String> = if !pattern_refs.is_empty() {
+            pathspec_prefixes(&pattern_refs)
+        } else if let Some(group_by) = self.config.files_group_by.as_deref() {
+            pathspec_prefixes(&[group_by])
+        } else {
+            Vec::new()
+        };
+
+        let detector = VanishedDetector::new(self.git_ops.path(), self.interner);
+        let scan = if let Some(matcher) = matcher {
+            detector.detect_sync(
+                base_sha,
+                head_sha,
+                |p| matcher.matches_sync(p),
+                &pathspecs,
+                self.config.vanished_max_commits,
+            )
+        } else if !yaml_groups.is_empty() {
+            detector.detect_sync(
+                base_sha,
+                head_sha,
+                |p| yaml_groups.iter().any(|g| g.matcher.matches_sync(p)),
+                &pathspecs,
+                self.config.vanished_max_commits,
+            )
+        } else {
+            result.diagnostics.push(Diagnostic {
+                severity: DiagnosticSeverity::Warning,
+                category: DiagnosticCategory::VanishedDetection,
+                message: "detect_vanished enabled but no files/files_yaml/files_group_by \
+                          patterns configured; skipping"
+                    .into(),
+            });
+            return;
+        };
+
+        match scan {
+            Ok(scan) => {
+                if scan.truncated {
+                    result.diagnostics.push(Diagnostic {
+                        severity: DiagnosticSeverity::Warning,
+                        category: DiagnosticCategory::VanishedDetection,
+                        message: format!(
+                            "vanished detection truncated after {} commits \
+                             (vanished_max_commits={}); results may be incomplete",
+                            scan.commits_walked, self.config.vanished_max_commits
+                        ),
+                    });
+                }
+                for anomaly in scan.anomalies {
+                    result.diagnostics.push(Diagnostic {
+                        severity: DiagnosticSeverity::Warning,
+                        category: DiagnosticCategory::VanishedDetection,
+                        message: anomaly,
+                    });
+                }
+                result.vanished_files = scan.vanished;
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                let category = if msg.contains("shallow") || msg.contains("not found") {
+                    DiagnosticCategory::ShallowClone
+                } else {
+                    DiagnosticCategory::VanishedDetection
+                };
+                result.diagnostics.push(Diagnostic {
+                    severity: DiagnosticSeverity::SoftError,
+                    category,
+                    message: format!("vanished detection failed (soft): {}", msg),
+                });
+            }
+        }
+    }
+
     fn load_yaml_groups(&self, result: &mut ProcessedResult) -> Vec<PatternGroup> {
         match self.load_yaml_content() {
             Ok(Some(yaml_content)) => {
