@@ -28,7 +28,6 @@
 //! # }
 //! ```
 
-#![feature(impl_trait_in_assoc_type)]
 #![warn(missing_docs, rust_2018_idioms)]
 
 pub mod coordination;
@@ -40,7 +39,6 @@ pub mod interner;
 pub mod output;
 pub mod patterns;
 pub mod platform;
-pub mod traits;
 pub mod types;
 
 pub use error::{Error, Result};

@@ -9,7 +9,6 @@ use crate::http::{GitHubApiClient, WorkflowApiClient};
 use crate::interner::StringInterner;
 use crate::patterns::loader::{PatternGroup, PatternLoader};
 use crate::patterns::matcher::PatternMatcher;
-use crate::traits::AsyncGitOps;
 use crate::types::{
     Diagnostic, DiagnosticCategory, DiagnosticSeverity, GroupResult, InputConfig, ProcessedResult,
     WorkflowCheckResult,
