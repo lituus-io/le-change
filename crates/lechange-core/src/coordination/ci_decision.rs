@@ -4,7 +4,6 @@
 //! Uses "latest run wins" semantics: for each file, the most recent workflow
 //! run determines whether it's considered verified (skip) or needs rebuild.
 
-use crate::interner::StringInterner;
 use crate::types::{
     ChangedFile, CiDecision, InternedString, RebuildReason, RebuildReasonKind, WorkflowConclusion,
     WorkflowFailure, WorkflowSuccess,
@@ -12,15 +11,13 @@ use crate::types::{
 use std::collections::{HashMap, HashSet};
 
 /// CI decision engine that computes rebuild/skip lists
-pub struct CiDecisionEngine<'a> {
-    #[allow(dead_code)]
-    interner: &'a StringInterner,
-}
+#[derive(Default)]
+pub struct CiDecisionEngine;
 
-impl<'a> CiDecisionEngine<'a> {
+impl CiDecisionEngine {
     /// Create a new CI decision engine
-    pub fn new(interner: &'a StringInterner) -> Self {
-        Self { interner }
+    pub fn new() -> Self {
+        Self
     }
 
     /// Compute the rebuild/skip decision from workflow analysis.
@@ -152,6 +149,7 @@ impl<'a> CiDecisionEngine<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::interner::StringInterner;
     use crate::types::{ChangeType, FileOrigin, WorkflowJob, WorkflowRun, WorkflowStatus};
 
     fn make_interner() -> StringInterner {
@@ -198,7 +196,7 @@ mod tests {
 
         let current = vec![make_current_file(file_a), make_current_file(file_b)];
 
-        let engine = CiDecisionEngine::new(&interner);
+        let engine = CiDecisionEngine::new();
         let decision = engine.compute(&current, &[], &[]);
 
         assert_eq!(decision.files_to_rebuild.len(), 2);
@@ -220,7 +218,7 @@ mod tests {
             failed_jobs: Vec::new(),
         }];
 
-        let engine = CiDecisionEngine::new(&interner);
+        let engine = CiDecisionEngine::new();
         let decision = engine.compute(&[], &failures, &[]);
 
         assert_eq!(decision.files_to_rebuild.len(), 1);
@@ -242,7 +240,7 @@ mod tests {
             files: vec![file_a],
         }];
 
-        let engine = CiDecisionEngine::new(&interner);
+        let engine = CiDecisionEngine::new();
         let decision = engine.compute(&[], &[], &successes);
 
         assert!(decision.files_to_rebuild.is_empty());
@@ -266,7 +264,7 @@ mod tests {
             files: vec![file_a],
         }];
 
-        let engine = CiDecisionEngine::new(&interner);
+        let engine = CiDecisionEngine::new();
         let decision = engine.compute(&[], &failures, &successes);
 
         // Success is more recent, so skip
@@ -291,7 +289,7 @@ mod tests {
             failed_jobs: Vec::new(),
         }];
 
-        let engine = CiDecisionEngine::new(&interner);
+        let engine = CiDecisionEngine::new();
         let decision = engine.compute(&[], &failures, &successes);
 
         // Failure is more recent, so rebuild
@@ -313,7 +311,7 @@ mod tests {
             files: vec![file_a],
         }];
 
-        let engine = CiDecisionEngine::new(&interner);
+        let engine = CiDecisionEngine::new();
         let decision = engine.compute(&current, &[], &successes);
 
         assert_eq!(decision.files_to_rebuild.len(), 1);
@@ -342,7 +340,7 @@ mod tests {
             files: vec![file_c],
         }];
 
-        let engine = CiDecisionEngine::new(&interner);
+        let engine = CiDecisionEngine::new();
         let decision = engine.compute(&current, &failures, &successes);
 
         // rebuild = {a (current), b (failed)}
@@ -361,8 +359,7 @@ mod tests {
 
     #[test]
     fn test_empty_workflows() {
-        let interner = make_interner();
-        let engine = CiDecisionEngine::new(&interner);
+        let engine = CiDecisionEngine::new();
         let decision = engine.compute(&[], &[], &[]);
 
         assert!(decision.files_to_rebuild.is_empty());
@@ -405,7 +402,7 @@ mod tests {
             files: vec![],
         }];
 
-        let engine = CiDecisionEngine::new(&interner);
+        let engine = CiDecisionEngine::new();
         let decision = engine.compute(&[], &failures, &successes);
 
         assert!(decision.failed_jobs.contains(&job_name));
@@ -586,7 +583,7 @@ mod tests {
         let current_files = vec![make_current_file(file_staging)];
 
         // Feed into CiDecisionEngine
-        let engine = CiDecisionEngine::new(&interner);
+        let engine = CiDecisionEngine::new();
         let decision = engine.compute(&current_files, &[run1_failure], &[run1_success]);
 
         // --- Verify Run 2 decisions ---

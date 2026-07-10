@@ -3,7 +3,6 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
-use crate::git::diff::DiffParser;
 use crate::git::sha::ShaResolver;
 use crate::interner::StringInterner;
 use crate::types::{ChangeType, ChangedFile, DiffResult};
@@ -248,7 +247,6 @@ impl GitRepository {
         let diff = repo.diff_tree_to_tree(Some(&base_tree), Some(&head_tree), Some(&mut opts))?;
 
         let mut result = DiffResult::default();
-        let _parser = DiffParser::new(interner);
 
         // Process each delta
         diff.foreach(
@@ -376,8 +374,8 @@ impl GitRepository {
             let head_oid = git2::Oid::from_str(head_sha)?;
 
             // Get trees (handles empty tree SHA for initial pushes)
-            let base_tree = Self::sha_to_tree(&repo, base_oid, &base_sha)?;
-            let head_tree = Self::sha_to_tree(&repo, head_oid, &head_sha)?;
+            let base_tree = Self::sha_to_tree(&repo, base_oid, base_sha)?;
+            let head_tree = Self::sha_to_tree(&repo, head_oid, head_sha)?;
 
             let mut opts = git2::DiffOptions::new();
             opts.ignore_submodules(true);

@@ -120,7 +120,7 @@ impl<'a> FileProcessor<'a> {
             {
                 Ok(workflow_result) => {
                     // Compute CI decision
-                    let ci_engine = CiDecisionEngine::new(self.interner);
+                    let ci_engine = CiDecisionEngine::new();
                     let ci_decision = ci_engine.compute(
                         &result.all_files,
                         &workflow_result.failures,

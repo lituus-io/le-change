@@ -592,7 +592,7 @@ fn test_job_level_partitioning_and_merge() {
     // Now test CI decision with these results
     use lechange_core::coordination::CiDecisionEngine;
 
-    let engine = CiDecisionEngine::new(&interner);
+    let engine = CiDecisionEngine::new();
     let decision = engine.compute(&current_files, &failures, &successes);
 
     // staging should rebuild (new change)

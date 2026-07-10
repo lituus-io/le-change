@@ -1,6 +1,5 @@
 //! Git operations module
 
-pub mod diff;
 pub mod recovery;
 pub mod repository;
 pub mod sha;

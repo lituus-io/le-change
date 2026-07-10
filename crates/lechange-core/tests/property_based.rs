@@ -290,7 +290,7 @@ proptest! {
             Vec::new()
         };
 
-        let engine = CiDecisionEngine::new(&interner);
+        let engine = CiDecisionEngine::new();
         let decision = engine.compute(&current, &failures, &successes);
 
         // Invariant: rebuild ∩ skip = ∅
@@ -328,7 +328,7 @@ proptest! {
             })
             .collect();
 
-        let engine = CiDecisionEngine::new(&interner);
+        let engine = CiDecisionEngine::new();
         let decision = engine.compute(&current, &[], &[]);
 
         // All current_changes files must appear in files_to_rebuild
