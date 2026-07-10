@@ -158,6 +158,27 @@ fn clean_opt(v: &Option<String>) -> Option<&str> {
     v.as_deref().filter(|s| !s.is_empty())
 }
 
+/// Pure arg-to-config mapping: cleaned env inputs threaded onto the core
+/// builder. Separated from run_detect so it is unit-testable.
+fn build_config(args: &DetectArgs) -> InputConfig<'_> {
+    InputConfig::github_actions_defaults()
+        .with_base_sha(clean_opt(&args.base_sha))
+        .with_sha(clean_opt(&args.sha))
+        .with_files(clean_vec(&args.files))
+        .with_files_ignore(clean_vec(&args.files_ignore))
+        .with_files_group_by(clean_opt(&args.files_group_by))
+        .with_files_group_by_key(&args.files_group_by_key)
+        .with_files_ancestor_lookup_depth(args.files_ancestor_lookup_depth)
+        .with_track_workflow_failures(args.track_workflow_failures)
+        .with_failure_tracking_level_str(&args.failure_tracking_level)
+        .with_wait_for_active_workflows(args.wait_for_active_workflows)
+        .with_workflow_max_wait_seconds(args.workflow_max_wait_seconds)
+        .with_workflow_name_filter(clean_opt(&args.workflow_name_filter))
+        .with_deploy_matrix_include_reason(args.deploy_matrix_include_reason)
+        .with_deploy_matrix_include_concurrency(args.deploy_matrix_include_concurrency)
+        .with_token(clean_opt(&args.token))
+}
+
 fn run_detect(args: DetectArgs) -> i32 {
     let repo_path = args
         .repo_path
@@ -169,34 +190,7 @@ fn run_detect(args: DetectArgs) -> i32 {
     let include_reason = args.deploy_matrix_include_reason;
     let include_concurrency = args.deploy_matrix_include_concurrency;
 
-    // Clean env var inputs (GHA sets empty strings for unset optional inputs)
-    let files = clean_vec(&args.files);
-    let files_ignore = clean_vec(&args.files_ignore);
-    let files_group_by = clean_opt(&args.files_group_by);
-    let workflow_name_filter = clean_opt(&args.workflow_name_filter);
-    let base_sha = clean_opt(&args.base_sha);
-    let sha = clean_opt(&args.sha);
-    let token = clean_opt(&args.token);
-
-    // Build InputConfig — borrowing from args (zero-copy). The GHA output
-    // policy (safe_output/json/escape_json/posix/skip_initial_fetch) lives in
-    // core's github_actions_defaults() so every consumer agrees on it.
-    let config = InputConfig::github_actions_defaults()
-        .with_base_sha(base_sha)
-        .with_sha(sha)
-        .with_files(files)
-        .with_files_ignore(files_ignore)
-        .with_files_group_by(files_group_by)
-        .with_files_group_by_key(&args.files_group_by_key)
-        .with_files_ancestor_lookup_depth(args.files_ancestor_lookup_depth)
-        .with_track_workflow_failures(args.track_workflow_failures)
-        .with_failure_tracking_level_str(&args.failure_tracking_level)
-        .with_wait_for_active_workflows(args.wait_for_active_workflows)
-        .with_workflow_max_wait_seconds(args.workflow_max_wait_seconds)
-        .with_workflow_name_filter(workflow_name_filter)
-        .with_deploy_matrix_include_reason(include_reason)
-        .with_deploy_matrix_include_concurrency(include_concurrency)
-        .with_token(token);
+    let config = build_config(&args);
 
     // Run detection
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -575,4 +569,98 @@ fn write_text_output(
 
     writeln!(w, "\nHas deployable changes: {}", out.has_changes)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base_args() -> DetectArgs {
+        DetectArgs {
+            files: None,
+            files_ignore: None,
+            files_group_by: None,
+            files_group_by_key: "name".to_string(),
+            files_ancestor_lookup_depth: 0,
+            track_workflow_failures: false,
+            failure_tracking_level: "run".to_string(),
+            wait_for_active_workflows: false,
+            workflow_max_wait_seconds: 300,
+            workflow_name_filter: None,
+            deploy_matrix_include_reason: false,
+            deploy_matrix_include_concurrency: false,
+            token: None,
+            base_sha: None,
+            sha: None,
+            output_format: None,
+            repo_path: None,
+        }
+    }
+
+    #[test]
+    fn test_clean_vec_filters_empty_env_strings() {
+        // GHA sets "" for unset optional inputs; value_delimiter yields [""]
+        assert_eq!(clean_vec(&Some(vec!["".to_string()])), None);
+        assert_eq!(clean_vec(&None), None);
+        assert_eq!(
+            clean_vec(&Some(vec!["a".to_string(), "".to_string(), "b".to_string()])),
+            Some(vec!["a", "b"])
+        );
+    }
+
+    #[test]
+    fn test_clean_opt_filters_empty_env_strings() {
+        assert_eq!(clean_opt(&Some("".to_string())), None);
+        assert_eq!(clean_opt(&None), None);
+        assert_eq!(clean_opt(&Some("x".to_string())), Some("x"));
+    }
+
+    #[test]
+    fn test_output_format_detection() {
+        assert!(matches!(OutputFormat::detect(Some("json")), OutputFormat::Json));
+        assert!(matches!(OutputFormat::detect(Some("gha")), OutputFormat::Gha));
+        assert!(matches!(OutputFormat::detect(Some("text")), OutputFormat::Text));
+        // Explicit beats environment
+        assert!(matches!(OutputFormat::detect(Some("text")), OutputFormat::Text));
+    }
+
+    #[test]
+    fn test_build_config_applies_gha_defaults() {
+        let args = base_args();
+        let config = build_config(&args);
+        assert!(config.safe_output);
+        assert!(config.json);
+        assert!(config.escape_json);
+        assert!(config.use_posix_path_separator);
+        assert!(config.skip_initial_fetch);
+        assert!(config.base_sha.is_none());
+        assert!(config.files.is_none());
+    }
+
+    #[test]
+    fn test_build_config_maps_args() {
+        let mut args = base_args();
+        args.base_sha = Some("abc123".to_string());
+        args.sha = Some("".to_string()); // empty env input must clean to None
+        args.files = Some(vec!["stacks/**/Pulumi.yaml".to_string()]);
+        args.files_group_by = Some("stacks/{group}/**".to_string());
+        args.files_group_by_key = "path".to_string();
+        args.failure_tracking_level = "job".to_string();
+        args.deploy_matrix_include_reason = true;
+
+        let config = build_config(&args);
+        assert_eq!(config.base_sha.as_deref(), Some("abc123"));
+        assert!(config.sha.is_none());
+        assert_eq!(
+            config.files.as_ref().map(|f| f.len()),
+            Some(1)
+        );
+        assert_eq!(config.files_group_by.as_deref(), Some("stacks/{group}/**"));
+        assert_eq!(config.files_group_by_key.as_deref(), Some("path"));
+        assert_eq!(
+            config.failure_tracking_level,
+            lechange_core::FailureTrackingLevel::Job
+        );
+        assert!(config.deploy_matrix_include_reason);
+    }
 }
