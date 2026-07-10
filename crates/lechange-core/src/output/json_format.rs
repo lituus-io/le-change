@@ -239,6 +239,8 @@ mod tests {
                 total_files: 1,
                 concurrency_blocked: false,
                 concurrency_blocked_by: 0,
+                vanished_files: Vec::new(),
+                reconstruct_sha: None,
             },
             GroupDeployDecision {
                 key: staging_key,
@@ -249,6 +251,8 @@ mod tests {
                 total_files: 1,
                 concurrency_blocked: false,
                 concurrency_blocked_by: 0,
+                vanished_files: Vec::new(),
+                reconstruct_sha: None,
             },
             GroupDeployDecision {
                 key: prod_key,
@@ -259,6 +263,8 @@ mod tests {
                 total_files: 1,
                 concurrency_blocked: false,
                 concurrency_blocked_by: 0,
+                vanished_files: Vec::new(),
+                reconstruct_sha: None,
             },
         ];
 
@@ -295,6 +301,8 @@ mod tests {
             total_files: 2,
             concurrency_blocked: false,
             concurrency_blocked_by: 0,
+            vanished_files: Vec::new(),
+            reconstruct_sha: None,
         }];
 
         let json = format_deploy_matrix(&decisions, |s| interner.resolve(s), " ", false, false);
@@ -321,6 +329,8 @@ mod tests {
             total_files: 1,
             concurrency_blocked: false,
             concurrency_blocked_by: 0,
+            vanished_files: Vec::new(),
+            reconstruct_sha: None,
         }];
 
         let json = format_deploy_matrix(&decisions, |s| interner.resolve(s), " ", false, false);
@@ -345,6 +355,8 @@ mod tests {
             total_files: 1,
             concurrency_blocked: false,
             concurrency_blocked_by: 0,
+            vanished_files: Vec::new(),
+            reconstruct_sha: None,
         }];
 
         let json = format_deploy_matrix(&decisions, |s| interner.resolve(s), " ", true, false);
@@ -369,6 +381,8 @@ mod tests {
             total_files: 1,
             concurrency_blocked: true,
             concurrency_blocked_by: 2,
+            vanished_files: Vec::new(),
+            reconstruct_sha: None,
         }];
 
         let json = format_deploy_matrix(&decisions, |s| interner.resolve(s), " ", false, true);
@@ -393,6 +407,8 @@ mod tests {
             total_files: 1,
             concurrency_blocked: true,
             concurrency_blocked_by: 1,
+            vanished_files: Vec::new(),
+            reconstruct_sha: None,
         }];
 
         let json = format_deploy_matrix(&decisions, |s| interner.resolve(s), " ", true, true);
@@ -419,6 +435,8 @@ mod tests {
             total_files: 1,
             concurrency_blocked: false,
             concurrency_blocked_by: 0,
+            vanished_files: Vec::new(),
+            reconstruct_sha: None,
         }];
 
         let json = format_deploy_matrix(&decisions, |s| interner.resolve(s), " ", false, false);
@@ -445,6 +463,8 @@ mod tests {
             total_files: 1,
             concurrency_blocked: false,
             concurrency_blocked_by: 0,
+            vanished_files: Vec::new(),
+            reconstruct_sha: None,
         }];
 
         let json = format_deploy_matrix(&decisions, |s| interner.resolve(s), " ", true, true);

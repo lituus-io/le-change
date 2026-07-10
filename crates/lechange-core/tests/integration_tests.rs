@@ -127,6 +127,7 @@ tests:
         group_results.push(lechange_core::types::GroupResult {
             key: interner.intern(&group.name),
             matched_indices: matched,
+            vanished_indices: Vec::new(),
         });
     }
 
@@ -141,6 +142,9 @@ tests:
         diagnostics: Vec::new(),
         workflow_result: None,
         ci_decision: None,
+        vanished_files: Vec::new(),
+        base_sha: None,
+        head_sha: None,
     };
 
     let outputs = ComputedOutputs::compute(&result, false);
@@ -213,6 +217,9 @@ fn test_rename_splitting_end_to_end() {
         diagnostics: Vec::new(),
         workflow_result: None,
         ci_decision: None,
+        vanished_files: Vec::new(),
+        base_sha: None,
+        head_sha: None,
     };
 
     // With rename splitting

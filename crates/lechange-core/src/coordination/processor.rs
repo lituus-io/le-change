@@ -206,6 +206,7 @@ impl<'a> FileProcessor<'a> {
                     GroupResult {
                         key: self.interner.intern(&group.name),
                         matched_indices: matched,
+                        vanished_indices: Vec::new(),
                     }
                 })
                 .collect();

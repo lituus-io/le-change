@@ -546,6 +546,7 @@ fn write_text_output(
             let action = match d.action {
                 GroupDeployAction::Deploy => "DEPLOY",
                 GroupDeployAction::Skip => "skip",
+                GroupDeployAction::Destroy => "DESTROY",
             };
             writeln!(w, "  [{action}] {key} ({} files)", d.total_files)?;
         }
@@ -603,7 +604,11 @@ mod tests {
         assert_eq!(clean_vec(&Some(vec!["".to_string()])), None);
         assert_eq!(clean_vec(&None), None);
         assert_eq!(
-            clean_vec(&Some(vec!["a".to_string(), "".to_string(), "b".to_string()])),
+            clean_vec(&Some(vec![
+                "a".to_string(),
+                "".to_string(),
+                "b".to_string()
+            ])),
             Some(vec!["a", "b"])
         );
     }
@@ -617,11 +622,23 @@ mod tests {
 
     #[test]
     fn test_output_format_detection() {
-        assert!(matches!(OutputFormat::detect(Some("json")), OutputFormat::Json));
-        assert!(matches!(OutputFormat::detect(Some("gha")), OutputFormat::Gha));
-        assert!(matches!(OutputFormat::detect(Some("text")), OutputFormat::Text));
+        assert!(matches!(
+            OutputFormat::detect(Some("json")),
+            OutputFormat::Json
+        ));
+        assert!(matches!(
+            OutputFormat::detect(Some("gha")),
+            OutputFormat::Gha
+        ));
+        assert!(matches!(
+            OutputFormat::detect(Some("text")),
+            OutputFormat::Text
+        ));
         // Explicit beats environment
-        assert!(matches!(OutputFormat::detect(Some("text")), OutputFormat::Text));
+        assert!(matches!(
+            OutputFormat::detect(Some("text")),
+            OutputFormat::Text
+        ));
     }
 
     #[test]
@@ -651,10 +668,7 @@ mod tests {
         let config = build_config(&args);
         assert_eq!(config.base_sha.as_deref(), Some("abc123"));
         assert!(config.sha.is_none());
-        assert_eq!(
-            config.files.as_ref().map(|f| f.len()),
-            Some(1)
-        );
+        assert_eq!(config.files.as_ref().map(|f| f.len()), Some(1));
         assert_eq!(config.files_group_by.as_deref(), Some("stacks/{group}/**"));
         assert_eq!(config.files_group_by_key.as_deref(), Some("path"));
         assert_eq!(

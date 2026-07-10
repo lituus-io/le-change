@@ -106,6 +106,16 @@ pub struct DiffResult {
     pub deletions: u32,
 }
 
+/// A file that was added within base..head history but no longer exists at
+/// head — invisible to the two-endpoint diff. Both fields are interned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VanishedFile {
+    /// Path at last existence (post-rename name if renamed before deletion)
+    pub path: InternedString,
+    /// Last commit where the file existed (parent of the deleting commit)
+    pub last_seen_sha: InternedString,
+}
+
 /// Processed result of the full detection pipeline (index-based partitioning)
 #[derive(Debug, Default)]
 pub struct ProcessedResult {
@@ -129,6 +139,13 @@ pub struct ProcessedResult {
     pub workflow_result: Option<WorkflowCheckResult>,
     /// CI rebuild/skip decision
     pub ci_decision: Option<CiDecision>,
+    /// Files added then removed within base..head (detect_vanished),
+    /// ordered newest-deletion-first
+    pub vanished_files: Vec<VanishedFile>,
+    /// Resolved base SHA (interned); reconstruct_sha for endpoint-deleted groups
+    pub base_sha: Option<InternedString>,
+    /// Resolved head SHA (interned)
+    pub head_sha: Option<InternedString>,
 }
 
 impl ProcessedResult {
@@ -162,6 +179,9 @@ impl ProcessedResult {
             diagnostics: Vec::new(),
             workflow_result: None,
             ci_decision: None,
+            vanished_files: Vec::new(),
+            base_sha: None,
+            head_sha: None,
         }
     }
 }
@@ -400,6 +420,8 @@ pub enum DiagnosticCategory {
     WorkflowApi,
     /// Ancestor directory file recovery
     AncestorRecovery,
+    /// Vanished-file detection (history walk)
+    VanishedDetection,
 }
 
 impl DiagnosticCategory {
@@ -414,6 +436,7 @@ impl DiagnosticCategory {
             Self::SymlinkDetection => "symlink_detection",
             Self::WorkflowApi => "workflow_api",
             Self::AncestorRecovery => "ancestor_recovery",
+            Self::VanishedDetection => "vanished_detection",
         }
     }
 }
@@ -425,6 +448,8 @@ pub struct GroupResult {
     pub key: InternedString,
     /// Indices into all_files that matched this group's patterns
     pub matched_indices: Vec<u32>,
+    /// Indices into ProcessedResult::vanished_files matched by this group
+    pub vanished_indices: Vec<u32>,
 }
 
 /// Deploy action for a YAML group
@@ -435,6 +460,8 @@ pub enum GroupDeployAction {
     Deploy,
     /// Group should be skipped
     Skip,
+    /// Group's stack should be destroyed (its defining files are gone)
+    Destroy,
 }
 
 impl GroupDeployAction {
@@ -443,6 +470,7 @@ impl GroupDeployAction {
         match self {
             Self::Deploy => "deploy",
             Self::Skip => "skip",
+            Self::Destroy => "destroy",
         }
     }
 }
@@ -457,6 +485,10 @@ pub enum GroupDeployReason {
     PreviousFailure,
     /// Group has both new changes and previous failures
     BothNewAndFailed,
+    /// Group's files were added then removed within the PR history
+    Vanished,
+    /// Group's files were deleted at the endpoint diff
+    EndpointDeleted,
 }
 
 impl GroupDeployReason {
@@ -466,6 +498,8 @@ impl GroupDeployReason {
             Self::NewChange => "new_change",
             Self::PreviousFailure => "previous_failure",
             Self::BothNewAndFailed => "both_new_and_failed",
+            Self::Vanished => "vanished",
+            Self::EndpointDeleted => "deleted",
         }
     }
 }
@@ -512,6 +546,11 @@ pub struct GroupDeployDecision {
     pub concurrency_blocked: bool,
     /// Number of concurrent workflow runs blocking this group
     pub concurrency_blocked_by: u32,
+    /// Vanished members of this group (empty unless detect_vanished)
+    pub vanished_files: Vec<VanishedFile>,
+    /// Commit to reconstruct file contents from (set when action == Destroy):
+    /// newest vanished last_seen_sha, or base_sha for endpoint-deleted groups
+    pub reconstruct_sha: Option<InternedString>,
 }
 
 /// Configuration input - parameters organized by category
@@ -597,6 +636,15 @@ pub struct InputConfig<'a> {
     pub safe_output: bool,
     /// Output directory for file dumps
     pub output_dir: Option<Cow<'a, str>>,
+
+    // Vanished-file detection
+    /// Walk base..head first-parent history for files added then removed
+    pub detect_vanished: bool,
+    /// Max commits to walk before truncating with a diagnostic (0 = unlimited)
+    pub vanished_max_commits: u32,
+    /// Map groups whose only membership is endpoint-Deleted files to Destroy
+    /// (reconstruct_sha = base_sha)
+    pub deleted_to_destroy: bool,
 
     // Performance tuning
     /// Skip initial fetch operation
@@ -756,6 +804,9 @@ impl<'a> Default for InputConfig<'a> {
             escape_json: true,
             safe_output: true,
             output_dir: None,
+            detect_vanished: false,
+            vanished_max_commits: 500,
+            deleted_to_destroy: false,
             skip_initial_fetch: false,
             use_rest_api: false,
             api_url: None,
@@ -916,6 +967,24 @@ impl<'a> InputConfig<'a> {
         if v.is_some() {
             self.token = v.map(Cow::Borrowed);
         }
+        self
+    }
+
+    /// Enable vanished-file detection (base..head first-parent history walk).
+    pub fn with_detect_vanished(mut self, v: bool) -> Self {
+        self.detect_vanished = v;
+        self
+    }
+
+    /// Cap the vanished-detection history walk (0 = unlimited).
+    pub fn with_vanished_max_commits(mut self, v: u32) -> Self {
+        self.vanished_max_commits = v;
+        self
+    }
+
+    /// Map endpoint-deleted-only groups to Destroy deploy actions.
+    pub fn with_deleted_to_destroy(mut self, v: bool) -> Self {
+        self.deleted_to_destroy = v;
         self
     }
 }
@@ -1144,6 +1213,9 @@ mod tests {
             diagnostics: Vec::new(),
             workflow_result: None,
             ci_decision: None,
+            vanished_files: Vec::new(),
+            base_sha: None,
+            head_sha: None,
         };
 
         assert_eq!(result.matched_files().len(), 2);
@@ -1313,6 +1385,8 @@ mod tests {
             total_files: 2,
             concurrency_blocked: false,
             concurrency_blocked_by: 0,
+            vanished_files: Vec::new(),
+            reconstruct_sha: None,
         };
         assert_eq!(decision.action, GroupDeployAction::Deploy);
         assert_eq!(decision.reason, Some(GroupDeployReason::NewChange));
@@ -1337,6 +1411,8 @@ mod tests {
             total_files: 1,
             concurrency_blocked: false,
             concurrency_blocked_by: 0,
+            vanished_files: Vec::new(),
+            reconstruct_sha: None,
         };
         assert_eq!(decision.action, GroupDeployAction::Skip);
         assert!(decision.reason.is_none());

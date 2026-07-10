@@ -240,6 +240,8 @@ impl ComputedOutputs {
                             total_files,
                             concurrency_blocked: cb,
                             concurrency_blocked_by: cb_by,
+                            vanished_files: Vec::new(),
+                            reconstruct_sha: None,
                         });
                     } else {
                         let has_new = group_rebuild.iter().any(|p| {
@@ -272,6 +274,8 @@ impl ComputedOutputs {
                             total_files,
                             concurrency_blocked: cb,
                             concurrency_blocked_by: cb_by,
+                            vanished_files: Vec::new(),
+                            reconstruct_sha: None,
                         });
                     }
                 }
@@ -295,6 +299,8 @@ impl ComputedOutputs {
                         total_files,
                         concurrency_blocked: cb,
                         concurrency_blocked_by: cb_by,
+                        vanished_files: Vec::new(),
+                        reconstruct_sha: None,
                     });
                 }
             }
@@ -383,6 +389,9 @@ mod tests {
             ],
             filtered_indices: vec![0, 1],
             unmatched_indices: vec![2],
+            vanished_files: Vec::new(),
+            base_sha: None,
+            head_sha: None,
             pattern_applied: true,
             group_results: Vec::new(),
             additions: 0,
@@ -407,6 +416,9 @@ mod tests {
             all_files: vec![make_file(ChangeType::Modified, 0)],
             filtered_indices: vec![0],
             unmatched_indices: Vec::new(),
+            vanished_files: Vec::new(),
+            base_sha: None,
+            head_sha: None,
             pattern_applied: false,
             group_results: Vec::new(),
             additions: 0,
@@ -437,6 +449,9 @@ mod tests {
             ],
             filtered_indices: vec![0, 1],
             unmatched_indices: Vec::new(),
+            vanished_files: Vec::new(),
+            base_sha: None,
+            head_sha: None,
             pattern_applied: true,
             group_results: Vec::new(),
             additions: 0,
@@ -475,15 +490,20 @@ mod tests {
             ],
             filtered_indices: vec![0, 1],
             unmatched_indices: Vec::new(),
+            vanished_files: Vec::new(),
+            base_sha: None,
+            head_sha: None,
             pattern_applied: true,
             group_results: vec![
                 GroupResult {
                     key: frontend_key,
                     matched_indices: vec![0],
+                    vanished_indices: Vec::new(),
                 },
                 GroupResult {
                     key: backend_key,
                     matched_indices: vec![1],
+                    vanished_indices: Vec::new(),
                 },
             ],
             additions: 0,
@@ -513,19 +533,25 @@ mod tests {
             ],
             filtered_indices: vec![0, 1, 2],
             unmatched_indices: Vec::new(),
+            vanished_files: Vec::new(),
+            base_sha: None,
+            head_sha: None,
             pattern_applied: true,
             group_results: vec![
                 GroupResult {
                     key: dev_key,
                     matched_indices: vec![0],
+                    vanished_indices: Vec::new(),
                 },
                 GroupResult {
                     key: staging_key,
                     matched_indices: vec![1],
+                    vanished_indices: Vec::new(),
                 },
                 GroupResult {
                     key: prod_key,
                     matched_indices: vec![2],
+                    vanished_indices: Vec::new(),
                 },
             ],
             additions: 0,
@@ -600,15 +626,20 @@ mod tests {
             ],
             filtered_indices: vec![0, 1],
             unmatched_indices: Vec::new(),
+            vanished_files: Vec::new(),
+            base_sha: None,
+            head_sha: None,
             pattern_applied: true,
             group_results: vec![
                 GroupResult {
                     key: dev_key,
                     matched_indices: vec![0],
+                    vanished_indices: Vec::new(),
                 },
                 GroupResult {
                     key: prod_key,
                     matched_indices: vec![1],
+                    vanished_indices: Vec::new(),
                 },
             ],
             additions: 0,
@@ -634,6 +665,9 @@ mod tests {
             all_files: vec![make_file(ChangeType::Modified, 0)],
             filtered_indices: vec![0],
             unmatched_indices: Vec::new(),
+            vanished_files: Vec::new(),
+            base_sha: None,
+            head_sha: None,
             pattern_applied: false,
             group_results: Vec::new(),
             additions: 0,
@@ -660,10 +694,14 @@ mod tests {
             ],
             filtered_indices: vec![0, 1],
             unmatched_indices: Vec::new(),
+            vanished_files: Vec::new(),
+            base_sha: None,
+            head_sha: None,
             pattern_applied: true,
             group_results: vec![GroupResult {
                 key: mixed_key,
                 matched_indices: vec![0, 1],
+                vanished_indices: Vec::new(),
             }],
             additions: 0,
             deletions: 0,
@@ -713,10 +751,14 @@ mod tests {
             all_files: vec![make_file(ChangeType::Modified, 0)],
             filtered_indices: vec![0],
             unmatched_indices: Vec::new(),
+            vanished_files: Vec::new(),
+            base_sha: None,
+            head_sha: None,
             pattern_applied: true,
             group_results: vec![GroupResult {
                 key: staging_key,
                 matched_indices: vec![0],
+                vanished_indices: Vec::new(),
             }],
             additions: 0,
             deletions: 0,

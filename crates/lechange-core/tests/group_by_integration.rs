@@ -46,6 +46,7 @@ fn build_result_from_groups(
             GroupResult {
                 key: interner.intern(&group.name),
                 matched_indices: matched,
+                vanished_indices: Vec::new(),
             }
         })
         .collect();
@@ -61,6 +62,9 @@ fn build_result_from_groups(
         diagnostics: Vec::new(),
         workflow_result: None,
         ci_decision: None,
+        vanished_files: Vec::new(),
+        base_sha: None,
+        head_sha: None,
     }
 }
 
@@ -221,10 +225,12 @@ fn test_enriched_matrix_end_to_end() {
             GroupResult {
                 key: prod_key,
                 matched_indices: vec![0],
+                vanished_indices: Vec::new(),
             },
             GroupResult {
                 key: dev_key,
                 matched_indices: vec![1],
+                vanished_indices: Vec::new(),
             },
         ],
         additions: 0,
@@ -232,6 +238,9 @@ fn test_enriched_matrix_end_to_end() {
         diagnostics: Vec::new(),
         workflow_result: None,
         ci_decision: None,
+        vanished_files: Vec::new(),
+        base_sha: None,
+        head_sha: None,
     };
 
     let outputs = ComputedOutputs::compute_with_concurrency(
@@ -326,12 +335,16 @@ fn test_concurrent_same_group_different_files() {
         group_results: vec![GroupResult {
             key: prod_key,
             matched_indices: vec![0],
+            vanished_indices: Vec::new(),
         }],
         additions: 0,
         deletions: 0,
         diagnostics: Vec::new(),
         workflow_result: None,
         ci_decision: None,
+        vanished_files: Vec::new(),
+        base_sha: None,
+        head_sha: None,
     };
 
     let outputs = ComputedOutputs::compute_with_concurrency(
@@ -387,10 +400,12 @@ fn test_concurrent_different_groups_parallel() {
             GroupResult {
                 key: dev_key,
                 matched_indices: vec![0],
+                vanished_indices: Vec::new(),
             },
             GroupResult {
                 key: prod_key,
                 matched_indices: vec![1],
+                vanished_indices: Vec::new(),
             },
         ],
         additions: 0,
@@ -398,6 +413,9 @@ fn test_concurrent_different_groups_parallel() {
         diagnostics: Vec::new(),
         workflow_result: None,
         ci_decision: None,
+        vanished_files: Vec::new(),
+        base_sha: None,
+        head_sha: None,
     };
 
     let outputs = ComputedOutputs::compute_with_concurrency(
@@ -453,10 +471,12 @@ fn test_concurrent_partial_overlap() {
             GroupResult {
                 key: prod_key,
                 matched_indices: vec![0],
+                vanished_indices: Vec::new(),
             },
             GroupResult {
                 key: staging_key,
                 matched_indices: vec![1],
+                vanished_indices: Vec::new(),
             },
         ],
         additions: 0,
@@ -464,6 +484,9 @@ fn test_concurrent_partial_overlap() {
         diagnostics: Vec::new(),
         workflow_result: None,
         ci_decision: None,
+        vanished_files: Vec::new(),
+        base_sha: None,
+        head_sha: None,
     };
 
     let outputs = ComputedOutputs::compute_with_concurrency(
@@ -530,10 +553,12 @@ fn test_concurrent_three_branches_cascade() {
             GroupResult {
                 key: prod_key,
                 matched_indices: vec![0],
+                vanished_indices: Vec::new(),
             },
             GroupResult {
                 key: dev_key,
                 matched_indices: vec![1],
+                vanished_indices: Vec::new(),
             },
         ],
         additions: 0,
@@ -541,6 +566,9 @@ fn test_concurrent_three_branches_cascade() {
         diagnostics: Vec::new(),
         workflow_result: None,
         ci_decision: None,
+        vanished_files: Vec::new(),
+        base_sha: None,
+        head_sha: None,
     };
 
     let outputs = ComputedOutputs::compute_with_concurrency(
@@ -591,6 +619,9 @@ fn test_concurrent_no_groups_no_blocking() {
         diagnostics: Vec::new(),
         workflow_result: None,
         ci_decision: None,
+        vanished_files: Vec::new(),
+        base_sha: None,
+        head_sha: None,
     };
 
     // compute without concurrency (None)
@@ -636,10 +667,12 @@ fn test_concurrent_matrix_output_shows_blocked() {
             GroupResult {
                 key: prod_key,
                 matched_indices: vec![0],
+                vanished_indices: Vec::new(),
             },
             GroupResult {
                 key: dev_key,
                 matched_indices: vec![1],
+                vanished_indices: Vec::new(),
             },
         ],
         additions: 0,
@@ -647,6 +680,9 @@ fn test_concurrent_matrix_output_shows_blocked() {
         diagnostics: Vec::new(),
         workflow_result: None,
         ci_decision: None,
+        vanished_files: Vec::new(),
+        base_sha: None,
+        head_sha: None,
     };
 
     let outputs = ComputedOutputs::compute_with_concurrency(
