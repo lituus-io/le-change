@@ -551,6 +551,8 @@ mod tests {
     #[test]
     fn test_is_symlink_in_tree() {
         let (dir, repo) = create_test_repo();
+        // Used only by the unix-gated symlink block below
+        #[cfg_attr(not(unix), allow(unused_variables))]
         let repo_path = dir.path();
 
         // Get the SHA with the regular file
