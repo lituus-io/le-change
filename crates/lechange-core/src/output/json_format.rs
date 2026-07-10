@@ -95,7 +95,7 @@ pub fn format_deploy_matrix<'a, F>(
 where
     F: Fn(crate::types::InternedString) -> Option<&'a str>,
 {
-    use crate::types::{GroupDeployAction, GroupDeployReason};
+    use crate::types::GroupDeployAction;
 
     let mut buf = String::with_capacity(256);
     buf.push_str(r#"{"include":["#);
@@ -138,18 +138,12 @@ where
 
         // Reason fields
         if include_reason {
-            let action_str = match d.action {
-                GroupDeployAction::Deploy => "deploy",
-                GroupDeployAction::Skip => "skip",
-            };
             buf.push_str(r#","action":""#);
-            buf.push_str(action_str);
+            buf.push_str(d.action.as_str());
             buf.push('"');
 
             let reason_str = match d.reason {
-                Some(GroupDeployReason::NewChange) => "new_change",
-                Some(GroupDeployReason::PreviousFailure) => "previous_failure",
-                Some(GroupDeployReason::BothNewAndFailed) => "both_new_and_failed",
+                Some(r) => r.as_str(),
                 None => "previously_succeeded",
             };
             buf.push_str(r#","reason":""#);

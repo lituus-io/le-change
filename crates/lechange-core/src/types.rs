@@ -325,6 +325,17 @@ pub enum RebuildReasonKind {
     BothNewAndFailed,
 }
 
+impl RebuildReasonKind {
+    /// Canonical string form used by every output surface (CLI, action, python).
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NewChange => "new_change",
+            Self::PreviousFailure => "previous_failure",
+            Self::BothNewAndFailed => "both_new_and_failed",
+        }
+    }
+}
+
 /// Detailed rebuild reason for a single file
 #[derive(Debug, Clone)]
 pub struct RebuildReason {
@@ -359,6 +370,16 @@ pub enum DiagnosticSeverity {
     SoftError,
 }
 
+impl DiagnosticSeverity {
+    /// Canonical string form used by every output surface (CLI, action, python).
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Warning => "warning",
+            Self::SoftError => "soft_error",
+        }
+    }
+}
+
 /// Diagnostic category for filtering
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -381,6 +402,22 @@ pub enum DiagnosticCategory {
     AncestorRecovery,
 }
 
+impl DiagnosticCategory {
+    /// Canonical string form used by every output surface (CLI, action, python).
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::InitialDiff => "initial_diff",
+            Self::SubmoduleDiff => "submodule_diff",
+            Self::SkippedSameSha => "skipped_same_sha",
+            Self::ShallowClone => "shallow_clone",
+            Self::PatternLoad => "pattern_load",
+            Self::SymlinkDetection => "symlink_detection",
+            Self::WorkflowApi => "workflow_api",
+            Self::AncestorRecovery => "ancestor_recovery",
+        }
+    }
+}
+
 /// Result of YAML group pattern matching
 #[derive(Debug, Clone)]
 pub struct GroupResult {
@@ -400,6 +437,16 @@ pub enum GroupDeployAction {
     Skip,
 }
 
+impl GroupDeployAction {
+    /// Canonical string form used by every output surface (CLI, action, python).
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Deploy => "deploy",
+            Self::Skip => "skip",
+        }
+    }
+}
+
 /// Reason why a group needs deployment
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -410,6 +457,17 @@ pub enum GroupDeployReason {
     PreviousFailure,
     /// Group has both new changes and previous failures
     BothNewAndFailed,
+}
+
+impl GroupDeployReason {
+    /// Canonical string form used by every output surface (CLI, action, python).
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NewChange => "new_change",
+            Self::PreviousFailure => "previous_failure",
+            Self::BothNewAndFailed => "both_new_and_failed",
+        }
+    }
 }
 
 /// Key mode for `files_group_by` template discovery

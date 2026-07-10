@@ -312,8 +312,8 @@ fn run_detect(args: DetectArgs) -> i32 {
             .iter()
             .map(|d| {
                 serde_json::json!({
-                    "severity": format!("{:?}", d.severity).to_lowercase(),
-                    "category": format!("{:?}", d.category),
+                    "severity": d.severity.as_str(),
+                    "category": d.category.as_str(),
                     "message": d.message,
                 })
             })
@@ -327,10 +327,7 @@ fn run_detect(args: DetectArgs) -> i32 {
             .group_deploy_decisions
             .iter()
             .map(|d| {
-                let action = match d.action {
-                    GroupDeployAction::Deploy => "deploy",
-                    GroupDeployAction::Skip => "skip",
-                };
+                let action = d.action.as_str();
                 let files: Vec<&str> = d
                     .files_to_rebuild
                     .iter()
@@ -343,16 +340,7 @@ fn run_detect(args: DetectArgs) -> i32 {
                     "count": files.len(),
                 });
                 if include_reason {
-                    let reason = d.reason.map(|r| match r {
-                        lechange_core::types::GroupDeployReason::NewChange => "new_change",
-                        lechange_core::types::GroupDeployReason::PreviousFailure => {
-                            "previous_failure"
-                        }
-                        lechange_core::types::GroupDeployReason::BothNewAndFailed => {
-                            "both_new_and_failed"
-                        }
-                    });
-                    obj["reason"] = serde_json::json!(reason);
+                    obj["reason"] = serde_json::json!(d.reason.map(|r| r.as_str()));
                 }
                 if include_concurrency {
                     obj["concurrency_blocked"] = serde_json::json!(d.concurrency_blocked);

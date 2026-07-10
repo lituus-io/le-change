@@ -3,7 +3,7 @@
 use lechange_core::interner::StringInterner;
 use lechange_core::output::computed::ComputedOutputs;
 use lechange_core::output::json_format::format_deploy_matrix;
-use lechange_core::types::{GroupDeployAction, ProcessedResult, RebuildReasonKind};
+use lechange_core::types::ProcessedResult;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
@@ -548,12 +548,7 @@ impl PyChangedFiles {
                     .iter()
                     .filter_map(|r| {
                         let file = interner.resolve(r.file)?.to_string();
-                        let kind = match r.kind {
-                            RebuildReasonKind::NewChange => "new_change",
-                            RebuildReasonKind::PreviousFailure => "previous_failure",
-                            RebuildReasonKind::BothNewAndFailed => "both_new_and_failed",
-                        }
-                        .to_string();
+                        let kind = r.kind.as_str().to_string();
                         let failed_job_name = r
                             .failed_job_name
                             .and_then(|s| interner.resolve(s).map(|p| p.to_string()));
@@ -575,23 +570,8 @@ impl PyChangedFiles {
             .group_deploy_decisions
             .iter()
             .map(|d| {
-                let action = match d.action {
-                    GroupDeployAction::Deploy => "deploy",
-                    GroupDeployAction::Skip => "skip",
-                }
-                .to_string();
-                let reason = d.reason.map(|r| {
-                    match r {
-                        lechange_core::types::GroupDeployReason::NewChange => "new_change",
-                        lechange_core::types::GroupDeployReason::PreviousFailure => {
-                            "previous_failure"
-                        }
-                        lechange_core::types::GroupDeployReason::BothNewAndFailed => {
-                            "both_new_and_failed"
-                        }
-                    }
-                    .to_string()
-                });
+                let action = d.action.as_str().to_string();
+                let reason = d.reason.map(|r| r.as_str().to_string());
                 let files: Vec<String> = d
                     .files_to_rebuild
                     .iter()
@@ -625,26 +605,8 @@ impl PyChangedFiles {
             .diagnostics
             .drain(..)
             .map(|d| {
-                let severity = match d.severity {
-                    lechange_core::types::DiagnosticSeverity::Warning => "warning",
-                    lechange_core::types::DiagnosticSeverity::SoftError => "soft_error",
-                }
-                .to_string();
-                let category = match d.category {
-                    lechange_core::types::DiagnosticCategory::InitialDiff => "initial_diff",
-                    lechange_core::types::DiagnosticCategory::SubmoduleDiff => "submodule_diff",
-                    lechange_core::types::DiagnosticCategory::SkippedSameSha => "skipped_same_sha",
-                    lechange_core::types::DiagnosticCategory::ShallowClone => "shallow_clone",
-                    lechange_core::types::DiagnosticCategory::PatternLoad => "pattern_load",
-                    lechange_core::types::DiagnosticCategory::SymlinkDetection => {
-                        "symlink_detection"
-                    }
-                    lechange_core::types::DiagnosticCategory::WorkflowApi => "workflow_api",
-                    lechange_core::types::DiagnosticCategory::AncestorRecovery => {
-                        "ancestor_recovery"
-                    }
-                }
-                .to_string();
+                let severity = d.severity.as_str().to_string();
+                let category = d.category.as_str().to_string();
                 PyDiagnostic {
                     severity,
                     category,
