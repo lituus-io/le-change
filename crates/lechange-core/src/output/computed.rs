@@ -3,7 +3,7 @@
 use crate::interner::StringInterner;
 use crate::types::{
     ChangeType, GroupDeployAction, GroupDeployDecision, GroupDeployReason, GroupResult,
-    InternedString, ProcessedResult, RebuildReasonKind,
+    InternedString, ProcessedResult, RebuildReasonKind, VanishedFile,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -66,7 +66,28 @@ impl ComputedOutputs {
         result: &ProcessedResult,
         output_renamed_as_deleted_added: bool,
         blocked_groups: Option<&HashMap<InternedString, Vec<u64>>>,
+        interner: Option<&StringInterner>,
+    ) -> Self {
+        Self::compute_full(
+            result,
+            output_renamed_as_deleted_added,
+            blocked_groups,
+            interner,
+            false,
+        )
+    }
+
+    /// Full computation including Destroy deploy decisions.
+    ///
+    /// `deleted_to_destroy` maps groups whose only membership is
+    /// endpoint-Deleted files to a Destroy action with
+    /// `reconstruct_sha = result.base_sha`.
+    pub fn compute_full(
+        result: &ProcessedResult,
+        output_renamed_as_deleted_added: bool,
+        blocked_groups: Option<&HashMap<InternedString, Vec<u64>>>,
         _interner: Option<&StringInterner>,
+        deleted_to_destroy: bool,
     ) -> Self {
         let filtered_set: HashSet<u32> = result.filtered_indices.iter().copied().collect();
         let unmatched_set: HashSet<u32> = result.unmatched_indices.iter().copied().collect();
@@ -193,6 +214,67 @@ impl ComputedOutputs {
         };
 
         // Compute group deploy decisions
+        // Destroy classification, shared by both decision branches. Returns
+        // Some(decision) when the group must be a Destroy: it has vanished
+        // members and no live (non-deleted) changes — or, with
+        // deleted_to_destroy, only endpoint-deleted members.
+        let destroy_decision =
+            |group: &GroupResult, cb: bool, cb_by: u32| -> Option<GroupDeployDecision> {
+                let group_vanished: Vec<VanishedFile> = group
+                    .vanished_indices
+                    .iter()
+                    .map(|&i| result.vanished_files[i as usize])
+                    .collect();
+                let live_changes = group
+                    .matched_indices
+                    .iter()
+                    .any(|&i| result.all_files[i as usize].change_type != ChangeType::Deleted);
+                let all_deleted = !group.matched_indices.is_empty() && !live_changes;
+                let deleted_paths: Vec<InternedString> = group
+                    .matched_indices
+                    .iter()
+                    .filter_map(|&i| {
+                        let f = &result.all_files[i as usize];
+                        (f.change_type == ChangeType::Deleted).then_some(f.path)
+                    })
+                    .collect();
+
+                if live_changes {
+                    return None; // group still deploys; vanished info rides along
+                }
+                if !group_vanished.is_empty() && (!all_deleted || deleted_to_destroy) {
+                    // vanished-only, or vanished + endpoint-deleted with the flag
+                    let reconstruct = group_vanished.first().map(|v| v.last_seen_sha);
+                    return Some(GroupDeployDecision {
+                        key: group.key,
+                        action: GroupDeployAction::Destroy,
+                        reason: Some(GroupDeployReason::Vanished),
+                        files_to_rebuild: deleted_paths,
+                        files_to_skip: Vec::new(),
+                        total_files: (group.matched_indices.len() + group_vanished.len()) as u32,
+                        concurrency_blocked: cb,
+                        concurrency_blocked_by: cb_by,
+                        vanished_files: group_vanished,
+                        reconstruct_sha: reconstruct,
+                    });
+                }
+                if deleted_to_destroy && all_deleted && group_vanished.is_empty() {
+                    return Some(GroupDeployDecision {
+                        key: group.key,
+                        action: GroupDeployAction::Destroy,
+                        reason: Some(GroupDeployReason::EndpointDeleted),
+                        files_to_rebuild: deleted_paths,
+                        files_to_skip: Vec::new(),
+                        total_files: group.matched_indices.len() as u32,
+                        concurrency_blocked: cb,
+                        concurrency_blocked_by: cb_by,
+                        vanished_files: Vec::new(),
+                        reconstruct_sha: result.base_sha,
+                    });
+                }
+                None
+            };
+
         if !result.group_results.is_empty() {
             if let Some(ref ci) = result.ci_decision {
                 // Build lookup sets from CiDecision
@@ -207,6 +289,11 @@ impl ComputedOutputs {
 
                 for group in &result.group_results {
                     let group_paths = resolve_group_paths(group);
+                    let (cb0, cb_by0) = concurrency_for(group.key);
+                    if let Some(decision) = destroy_decision(group, cb0, cb_by0) {
+                        out.group_deploy_decisions.push(decision);
+                        continue;
+                    }
 
                     if group_paths.is_empty() {
                         continue;
@@ -283,6 +370,11 @@ impl ComputedOutputs {
                 // No CI decision — all groups with files get Deploy/NewChange
                 for group in &result.group_results {
                     let group_paths = resolve_group_paths(group);
+                    let (cb0, cb_by0) = concurrency_for(group.key);
+                    if let Some(decision) = destroy_decision(group, cb0, cb_by0) {
+                        out.group_deploy_decisions.push(decision);
+                        continue;
+                    }
 
                     if group_paths.is_empty() {
                         continue;
@@ -345,6 +437,13 @@ impl ComputedOutputs {
         self.group_deploy_decisions
             .iter()
             .any(|d| d.action == GroupDeployAction::Deploy)
+    }
+
+    /// Whether any group carries a Destroy deploy decision
+    pub fn has_destroyable_groups(&self) -> bool {
+        self.group_deploy_decisions
+            .iter()
+            .any(|d| d.action == GroupDeployAction::Destroy)
     }
 
     /// Any deleted files (filtered)
@@ -781,5 +880,156 @@ mod tests {
         );
         assert!(outputs.group_deploy_decisions[0].reason.is_none());
         assert!(!outputs.has_deployable_groups());
+    }
+}
+
+#[cfg(test)]
+mod vanished_decision_tests {
+    use super::*;
+    use crate::interner::StringInterner;
+    use crate::types::{ChangedFile, FileOrigin, GroupResult, VanishedFile};
+
+    fn deleted_file(path: InternedString) -> ChangedFile {
+        ChangedFile {
+            path,
+            change_type: ChangeType::Deleted,
+            previous_path: None,
+            is_symlink: false,
+            submodule_depth: 0,
+            origin: FileOrigin {
+                in_current_changes: true,
+                in_previous_failure: false,
+                in_previous_success: false,
+            },
+        }
+    }
+
+    fn modified_file(path: InternedString) -> ChangedFile {
+        ChangedFile {
+            change_type: ChangeType::Modified,
+            ..deleted_file(path)
+        }
+    }
+
+    fn base_result(interner: &StringInterner) -> ProcessedResult {
+        let mut r = ProcessedResult::default();
+        r.base_sha = Some(interner.intern("basesha"));
+        r.head_sha = Some(interner.intern("headsha"));
+        r
+    }
+
+    #[test]
+    fn test_vanished_only_group_destroys_with_last_seen() {
+        let interner = StringInterner::new();
+        let mut result = base_result(&interner);
+        result.vanished_files = vec![VanishedFile {
+            path: interner.intern("stacks/gone/Pulumi.yaml"),
+            last_seen_sha: interner.intern("cafe1234"),
+        }];
+        result.group_results = vec![GroupResult {
+            key: interner.intern("gone"),
+            matched_indices: Vec::new(),
+            vanished_indices: vec![0],
+        }];
+
+        let out = ComputedOutputs::compute_full(&result, false, None, None, false);
+        assert_eq!(out.group_deploy_decisions.len(), 1);
+        let d = &out.group_deploy_decisions[0];
+        assert_eq!(d.action, GroupDeployAction::Destroy);
+        assert_eq!(d.reason, Some(GroupDeployReason::Vanished));
+        assert_eq!(
+            interner.resolve(d.reconstruct_sha.unwrap()),
+            Some("cafe1234")
+        );
+        assert!(out.has_destroyable_groups());
+        assert!(!out.has_deployable_groups());
+    }
+
+    #[test]
+    fn test_endpoint_deleted_group_destroys_only_with_flag() {
+        let interner = StringInterner::new();
+        let mut result = base_result(&interner);
+        result.all_files = vec![deleted_file(interner.intern("stacks/old/Pulumi.yaml"))];
+        result.filtered_indices = vec![0];
+        result.group_results = vec![GroupResult {
+            key: interner.intern("old"),
+            matched_indices: vec![0],
+            vanished_indices: Vec::new(),
+        }];
+
+        // Flag off: legacy behavior (Deploy — the deletion rides the build path)
+        let out = ComputedOutputs::compute_full(&result, false, None, None, false);
+        assert_eq!(
+            out.group_deploy_decisions[0].action,
+            GroupDeployAction::Deploy
+        );
+
+        // Flag on: Destroy with reconstruct_sha = base
+        let out = ComputedOutputs::compute_full(&result, false, None, None, true);
+        let d = &out.group_deploy_decisions[0];
+        assert_eq!(d.action, GroupDeployAction::Destroy);
+        assert_eq!(d.reason, Some(GroupDeployReason::EndpointDeleted));
+        assert_eq!(
+            interner.resolve(d.reconstruct_sha.unwrap()),
+            Some("basesha")
+        );
+        assert_eq!(d.files_to_rebuild.len(), 1);
+    }
+
+    #[test]
+    fn test_mixed_group_with_live_changes_stays_deploy() {
+        let interner = StringInterner::new();
+        let mut result = base_result(&interner);
+        result.all_files = vec![modified_file(interner.intern("stacks/live/Pulumi.yaml"))];
+        result.filtered_indices = vec![0];
+        result.vanished_files = vec![VanishedFile {
+            path: interner.intern("stacks/live/old.yaml"),
+            last_seen_sha: interner.intern("cafe1234"),
+        }];
+        result.group_results = vec![GroupResult {
+            key: interner.intern("live"),
+            matched_indices: vec![0],
+            vanished_indices: vec![0],
+        }];
+
+        let out = ComputedOutputs::compute_full(&result, false, None, None, true);
+        let d = &out.group_deploy_decisions[0];
+        assert_eq!(d.action, GroupDeployAction::Deploy);
+        assert!(d.reconstruct_sha.is_none());
+    }
+
+    #[test]
+    fn test_vanished_plus_deleted_destroy_gated_by_flag() {
+        let interner = StringInterner::new();
+        let mut result = base_result(&interner);
+        result.all_files = vec![deleted_file(interner.intern("stacks/g/Pulumi.yaml"))];
+        result.filtered_indices = vec![0];
+        result.vanished_files = vec![VanishedFile {
+            path: interner.intern("stacks/g/schema.json"),
+            last_seen_sha: interner.intern("beef5678"),
+        }];
+        result.group_results = vec![GroupResult {
+            key: interner.intern("g"),
+            matched_indices: vec![0],
+            vanished_indices: vec![0],
+        }];
+
+        // Without the flag the endpoint-deleted member keeps legacy Deploy
+        let out = ComputedOutputs::compute_full(&result, false, None, None, false);
+        assert_eq!(
+            out.group_deploy_decisions[0].action,
+            GroupDeployAction::Deploy
+        );
+
+        // With the flag: Destroy, newest vanished sha wins for reconstruction
+        let out = ComputedOutputs::compute_full(&result, false, None, None, true);
+        let d = &out.group_deploy_decisions[0];
+        assert_eq!(d.action, GroupDeployAction::Destroy);
+        assert_eq!(d.reason, Some(GroupDeployReason::Vanished));
+        assert_eq!(
+            interner.resolve(d.reconstruct_sha.unwrap()),
+            Some("beef5678")
+        );
+        assert_eq!(d.total_files, 2);
     }
 }

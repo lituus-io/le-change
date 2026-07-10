@@ -85,6 +85,33 @@ pub fn escape_json_into(s: &str, buf: &mut String) {
 ///
 /// When `include_reason` is true, adds `"action":"deploy","reason":"new_change"` fields.
 /// When `include_concurrency` is true, adds `"concurrency_blocked":bool,"concurrency_blocked_by":N` fields.
+/// Format vanished files as a JSON array of {path, last_seen_sha} objects.
+/// Zero-serde, same escaping discipline as the rest of this module.
+pub fn format_vanished_json<'a, F>(vanished: &[crate::types::VanishedFile], resolve: F) -> String
+where
+    F: Fn(crate::types::InternedString) -> Option<&'a str>,
+{
+    let mut buf = String::with_capacity(64);
+    buf.push('[');
+    let mut first = true;
+    for v in vanished {
+        let (Some(path), Some(sha)) = (resolve(v.path), resolve(v.last_seen_sha)) else {
+            continue;
+        };
+        if !first {
+            buf.push(',');
+        }
+        first = false;
+        buf.push_str(r#"{"path":""#);
+        escape_json_into(path, &mut buf);
+        buf.push_str(r#"","last_seen_sha":""#);
+        escape_json_into(sha, &mut buf);
+        buf.push_str(r#""}"#);
+    }
+    buf.push(']');
+    buf
+}
+
 pub fn format_deploy_matrix<'a, F>(
     decisions: &[crate::types::GroupDeployDecision],
     resolve: F,
@@ -102,7 +129,9 @@ where
 
     let mut first = true;
     for d in decisions {
-        if d.action != GroupDeployAction::Deploy && !include_reason {
+        // Deploy always emitted; Destroy always emitted (consumers need the
+        // destroy matrix regardless of include_reason); Skip only with reasons.
+        if d.action == GroupDeployAction::Skip && !include_reason {
             continue;
         }
 
@@ -130,14 +159,25 @@ where
                 count += 1;
             }
         }
+        for v in &d.vanished_files {
+            if let Some(path) = resolve(v.path) {
+                if !file_first {
+                    escape_json_into(separator, &mut buf);
+                }
+                file_first = false;
+                escape_json_into(path, &mut buf);
+                count += 1;
+            }
+        }
         buf.push('"');
 
         // Count
         buf.push_str(r#","count":"#);
         buf.push_str(&count.to_string());
 
-        // Reason fields
-        if include_reason {
+        // Reason fields: always present on Destroy entries so consumers can
+        // route them without configuring include_reason.
+        if include_reason || d.action == GroupDeployAction::Destroy {
             buf.push_str(r#","action":""#);
             buf.push_str(d.action.as_str());
             buf.push('"');
@@ -149,6 +189,15 @@ where
             buf.push_str(r#","reason":""#);
             buf.push_str(reason_str);
             buf.push('"');
+        }
+
+        // Reconstruction commit (Destroy entries)
+        if let Some(sha) = d.reconstruct_sha {
+            if let Some(sha_str) = resolve(sha) {
+                buf.push_str(r#","last_seen_sha":""#);
+                escape_json_into(sha_str, &mut buf);
+                buf.push('"');
+            }
         }
 
         // Concurrency fields
@@ -559,5 +608,65 @@ mod tests {
             assert!(include.is_array());
             assert_eq!(include.as_array().unwrap().len(), values.len());
         }
+    }
+}
+
+#[cfg(test)]
+mod vanished_format_tests {
+    use super::*;
+    use crate::interner::StringInterner;
+    use crate::types::{GroupDeployAction, GroupDeployDecision, GroupDeployReason, VanishedFile};
+
+    #[test]
+    fn test_destroy_matrix_entry_shape() {
+        let interner = StringInterner::new();
+        let d = GroupDeployDecision {
+            key: interner.intern("gone"),
+            action: GroupDeployAction::Destroy,
+            reason: Some(GroupDeployReason::Vanished),
+            files_to_rebuild: Vec::new(),
+            files_to_skip: Vec::new(),
+            total_files: 1,
+            concurrency_blocked: false,
+            concurrency_blocked_by: 0,
+            vanished_files: vec![VanishedFile {
+                path: interner.intern("stacks/gone/Pulumi.yaml"),
+                last_seen_sha: interner.intern("cafe1234"),
+            }],
+            reconstruct_sha: Some(interner.intern("cafe1234")),
+        };
+
+        // include_reason=false: Destroy entries must STILL be emitted with
+        // action/reason/last_seen_sha
+        let json = format_deploy_matrix(&[d], |s| interner.resolve(s), " ", false, false);
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+        let entry = &parsed["include"][0];
+        assert_eq!(entry["stack"], "gone");
+        assert_eq!(entry["action"], "destroy");
+        assert_eq!(entry["reason"], "vanished");
+        assert_eq!(entry["last_seen_sha"], "cafe1234");
+        assert_eq!(entry["files"], "stacks/gone/Pulumi.yaml");
+        assert_eq!(entry["count"], 1);
+    }
+
+    #[test]
+    fn test_format_vanished_json() {
+        let interner = StringInterner::new();
+        let v = vec![
+            VanishedFile {
+                path: interner.intern("stacks/a/Pulumi.yaml"),
+                last_seen_sha: interner.intern("aaaa"),
+            },
+            VanishedFile {
+                path: interner.intern(r#"stacks/we "ird/x.yaml"#),
+                last_seen_sha: interner.intern("bbbb"),
+            },
+        ];
+        let json = format_vanished_json(&v, |s| interner.resolve(s));
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+        assert_eq!(parsed[0]["path"], "stacks/a/Pulumi.yaml");
+        assert_eq!(parsed[0]["last_seen_sha"], "aaaa");
+        assert_eq!(parsed[1]["path"], r#"stacks/we "ird/x.yaml"#);
+        assert_eq!(format_vanished_json(&[], |s| interner.resolve(s)), "[]");
     }
 }
