@@ -7,7 +7,6 @@ use lechange_core::output::computed::ComputedOutputs;
 use lechange_core::output::json_format::{format_deploy_matrix, safe_output_escape};
 use lechange_core::types::{GroupDeployAction, InputConfig};
 use lechange_core::StringInterner;
-use std::borrow::Cow;
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -179,33 +178,25 @@ fn run_detect(args: DetectArgs) -> i32 {
     let sha = clean_opt(&args.sha);
     let token = clean_opt(&args.token);
 
-    // Build InputConfig — borrowing from args (zero-copy)
-    let config = InputConfig {
-        base_sha: base_sha.map(Cow::Borrowed),
-        sha: sha.map(Cow::Borrowed),
-        files: files.map(|v| v.into_iter().map(Cow::Borrowed).collect()),
-        files_ignore: files_ignore.map(|v| v.into_iter().map(Cow::Borrowed).collect()),
-        files_group_by: files_group_by.map(Cow::Borrowed),
-        files_group_by_key: Some(Cow::Borrowed(&args.files_group_by_key)),
-        files_ancestor_lookup_depth: args.files_ancestor_lookup_depth,
-        track_workflow_failures: args.track_workflow_failures,
-        failure_tracking_level: match args.failure_tracking_level.as_str() {
-            "job" | "Job" => lechange_core::FailureTrackingLevel::Job,
-            _ => lechange_core::FailureTrackingLevel::Run,
-        },
-        wait_for_active_workflows: args.wait_for_active_workflows,
-        workflow_max_wait_seconds: args.workflow_max_wait_seconds,
-        workflow_name_filter: workflow_name_filter.map(Cow::Borrowed),
-        deploy_matrix_include_reason: include_reason,
-        deploy_matrix_include_concurrency: include_concurrency,
-        token: token.map(Cow::Borrowed),
-        safe_output: true,
-        json: true,
-        escape_json: true,
-        use_posix_path_separator: true,
-        skip_initial_fetch: true,
-        ..Default::default()
-    };
+    // Build InputConfig — borrowing from args (zero-copy). The GHA output
+    // policy (safe_output/json/escape_json/posix/skip_initial_fetch) lives in
+    // core's github_actions_defaults() so every consumer agrees on it.
+    let config = InputConfig::github_actions_defaults()
+        .with_base_sha(base_sha)
+        .with_sha(sha)
+        .with_files(files)
+        .with_files_ignore(files_ignore)
+        .with_files_group_by(files_group_by)
+        .with_files_group_by_key(&args.files_group_by_key)
+        .with_files_ancestor_lookup_depth(args.files_ancestor_lookup_depth)
+        .with_track_workflow_failures(args.track_workflow_failures)
+        .with_failure_tracking_level_str(&args.failure_tracking_level)
+        .with_wait_for_active_workflows(args.wait_for_active_workflows)
+        .with_workflow_max_wait_seconds(args.workflow_max_wait_seconds)
+        .with_workflow_name_filter(workflow_name_filter)
+        .with_deploy_matrix_include_reason(include_reason)
+        .with_deploy_matrix_include_concurrency(include_concurrency)
+        .with_token(token);
 
     // Run detection
     let rt = tokio::runtime::Builder::new_multi_thread()

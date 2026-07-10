@@ -732,9 +732,226 @@ impl<'a> Default for InputConfig<'a> {
     }
 }
 
+impl<'a> InputConfig<'a> {
+    /// Baseline configuration for GitHub Actions consumers: safe multiline
+    /// escaping, JSON outputs, POSIX path separators, and no implicit fetch.
+    /// The CLI (and therefore the composite action) builds on this; the policy
+    /// lives here so every consumer agrees on what "running under GHA" means.
+    pub fn github_actions_defaults() -> Self {
+        Self {
+            safe_output: true,
+            json: true,
+            escape_json: true,
+            use_posix_path_separator: true,
+            skip_initial_fetch: true,
+            ..Self::default()
+        }
+    }
+
+    // ── zero-copy builder methods ───────────────────────────────────────
+    // Each setter borrows (`Cow::Borrowed`) — no allocation. `Option`-taking
+    // setters leave the field untouched on `None` so cleaned env inputs can
+    // be threaded straight through.
+
+    /// Override the base commit SHA (no-op on `None`).
+    pub fn with_base_sha(mut self, v: Option<&'a str>) -> Self {
+        if v.is_some() {
+            self.base_sha = v.map(Cow::Borrowed);
+        }
+        self
+    }
+
+    /// Override the head commit SHA (no-op on `None`).
+    pub fn with_sha(mut self, v: Option<&'a str>) -> Self {
+        if v.is_some() {
+            self.sha = v.map(Cow::Borrowed);
+        }
+        self
+    }
+
+    /// Set include glob patterns (no-op on `None`).
+    pub fn with_files(mut self, v: Option<Vec<&'a str>>) -> Self {
+        if let Some(files) = v {
+            self.files = Some(files.into_iter().map(Cow::Borrowed).collect());
+        }
+        self
+    }
+
+    /// Set exclude glob patterns (no-op on `None`).
+    pub fn with_files_ignore(mut self, v: Option<Vec<&'a str>>) -> Self {
+        if let Some(files) = v {
+            self.files_ignore = Some(files.into_iter().map(Cow::Borrowed).collect());
+        }
+        self
+    }
+
+    /// Set the group discovery template, e.g. `stacks/{group}/**` (no-op on `None`).
+    pub fn with_files_group_by(mut self, v: Option<&'a str>) -> Self {
+        if v.is_some() {
+            self.files_group_by = v.map(Cow::Borrowed);
+        }
+        self
+    }
+
+    /// Set the group key mode (`name`, `path`, or `hash`).
+    pub fn with_files_group_by_key(mut self, v: &'a str) -> Self {
+        self.files_group_by_key = Some(Cow::Borrowed(v));
+        self
+    }
+
+    /// Set ancestor directory lookup depth (clamped to 3 by the pipeline).
+    pub fn with_files_ancestor_lookup_depth(mut self, v: u32) -> Self {
+        self.files_ancestor_lookup_depth = v;
+        self
+    }
+
+    /// Enable workflow failure tracking.
+    pub fn with_track_workflow_failures(mut self, v: bool) -> Self {
+        self.track_workflow_failures = v;
+        self
+    }
+
+    /// Set failure tracking granularity from its canonical string form
+    /// (`"job"`/`"Job"` -> Job, anything else -> Run).
+    pub fn with_failure_tracking_level_str(mut self, v: &str) -> Self {
+        self.failure_tracking_level = match v {
+            "job" | "Job" => FailureTrackingLevel::Job,
+            _ => FailureTrackingLevel::Run,
+        };
+        self
+    }
+
+    /// Wait for concurrent overlapping workflows before deciding.
+    pub fn with_wait_for_active_workflows(mut self, v: bool) -> Self {
+        self.wait_for_active_workflows = v;
+        self
+    }
+
+    /// Cap the wait for active workflows, in seconds.
+    pub fn with_workflow_max_wait_seconds(mut self, v: u32) -> Self {
+        self.workflow_max_wait_seconds = v;
+        self
+    }
+
+    /// Filter tracked workflows by name glob (no-op on `None`).
+    pub fn with_workflow_name_filter(mut self, v: Option<&'a str>) -> Self {
+        if v.is_some() {
+            self.workflow_name_filter = v.map(Cow::Borrowed);
+        }
+        self
+    }
+
+    /// Include action/reason fields in the deploy matrix.
+    pub fn with_deploy_matrix_include_reason(mut self, v: bool) -> Self {
+        self.deploy_matrix_include_reason = v;
+        self
+    }
+
+    /// Include concurrency fields in the deploy matrix.
+    pub fn with_deploy_matrix_include_concurrency(mut self, v: bool) -> Self {
+        self.deploy_matrix_include_concurrency = v;
+        self
+    }
+
+    /// Set the GitHub token (no-op on `None`).
+    pub fn with_token(mut self, v: Option<&'a str>) -> Self {
+        if v.is_some() {
+            self.token = v.map(Cow::Borrowed);
+        }
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_builder_matches_struct_literal() {
+        let built = InputConfig::github_actions_defaults()
+            .with_base_sha(Some("abc"))
+            .with_sha(Some("def"))
+            .with_files(Some(vec!["stacks/**"]))
+            .with_files_ignore(Some(vec!["docs/**"]))
+            .with_files_group_by(Some("stacks/{group}/**"))
+            .with_files_group_by_key("path")
+            .with_files_ancestor_lookup_depth(2)
+            .with_track_workflow_failures(true)
+            .with_failure_tracking_level_str("job")
+            .with_wait_for_active_workflows(true)
+            .with_workflow_max_wait_seconds(60)
+            .with_workflow_name_filter(Some("CI*"))
+            .with_deploy_matrix_include_reason(true)
+            .with_deploy_matrix_include_concurrency(true)
+            .with_token(Some("t"));
+
+        let literal = InputConfig {
+            base_sha: Some(Cow::Borrowed("abc")),
+            sha: Some(Cow::Borrowed("def")),
+            files: Some(vec![Cow::Borrowed("stacks/**")]),
+            files_ignore: Some(vec![Cow::Borrowed("docs/**")]),
+            files_group_by: Some(Cow::Borrowed("stacks/{group}/**")),
+            files_group_by_key: Some(Cow::Borrowed("path")),
+            files_ancestor_lookup_depth: 2,
+            track_workflow_failures: true,
+            failure_tracking_level: FailureTrackingLevel::Job,
+            wait_for_active_workflows: true,
+            workflow_max_wait_seconds: 60,
+            workflow_name_filter: Some(Cow::Borrowed("CI*")),
+            deploy_matrix_include_reason: true,
+            deploy_matrix_include_concurrency: true,
+            token: Some(Cow::Borrowed("t")),
+            safe_output: true,
+            json: true,
+            escape_json: true,
+            use_posix_path_separator: true,
+            skip_initial_fetch: true,
+            ..Default::default()
+        };
+
+        assert_eq!(built.base_sha, literal.base_sha);
+        assert_eq!(built.sha, literal.sha);
+        assert_eq!(built.files, literal.files);
+        assert_eq!(built.files_ignore, literal.files_ignore);
+        assert_eq!(built.files_group_by, literal.files_group_by);
+        assert_eq!(built.files_group_by_key, literal.files_group_by_key);
+        assert_eq!(
+            built.files_ancestor_lookup_depth,
+            literal.files_ancestor_lookup_depth
+        );
+        assert_eq!(
+            built.track_workflow_failures,
+            literal.track_workflow_failures
+        );
+        assert_eq!(built.failure_tracking_level, literal.failure_tracking_level);
+        assert_eq!(
+            built.wait_for_active_workflows,
+            literal.wait_for_active_workflows
+        );
+        assert_eq!(
+            built.workflow_max_wait_seconds,
+            literal.workflow_max_wait_seconds
+        );
+        assert_eq!(built.workflow_name_filter, literal.workflow_name_filter);
+        assert_eq!(built.token, literal.token);
+        assert!(built.safe_output && built.json && built.escape_json);
+        assert!(built.use_posix_path_separator && built.skip_initial_fetch);
+    }
+
+    #[test]
+    fn test_builder_none_leaves_defaults() {
+        let built = InputConfig::github_actions_defaults()
+            .with_base_sha(None)
+            .with_files(None)
+            .with_files_group_by(None)
+            .with_workflow_name_filter(None)
+            .with_token(None);
+        assert!(built.base_sha.is_none());
+        assert!(built.files.is_none());
+        assert!(built.files_group_by.is_none());
+        assert!(built.workflow_name_filter.is_none());
+        assert!(built.token.is_none());
+    }
 
     #[test]
     fn test_change_type_from_byte() {
