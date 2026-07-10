@@ -48,7 +48,7 @@ impl PatternLoader {
     /// ```
     pub fn load_yaml_groups(yaml: &str, negation_first: bool) -> Result<Vec<PatternGroup>> {
         let groups: HashMap<String, Vec<String>> =
-            serde_yaml::from_str(yaml).map_err(|e| Error::Yaml(e.to_string()))?;
+            serde_norway::from_str(yaml).map_err(|e| Error::Yaml(e.to_string()))?;
 
         let mut result = Vec::with_capacity(groups.len());
 
