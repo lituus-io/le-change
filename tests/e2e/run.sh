@@ -22,7 +22,10 @@ FAIL=0
 cargo build --release -p lechange-cli --locked --manifest-path "$ROOT/Cargo.toml"
 
 gitc() { git -C "$1" -c user.email=t@t -c user.name=t -c commit.gpgsign=false "${@:2}"; }
-normalize() { sed -E 's/LECHANGE_EOF_[0-9]+_[0-9]+/LECHANGE_EOF_NORMALIZED/g' "$1"; }
+normalize() {
+  sed -E -e 's/LECHANGE_EOF_[0-9]+_[0-9]+/LECHANGE_EOF_NORMALIZED/g' \
+         -e 's/[0-9a-f]{40}/GITSHA/g' "$1"
+}
 
 new_repo() { mkdir -p "$1" && gitc "$1" init -q -b main; }
 
@@ -91,6 +94,36 @@ gitc "$R" add -A && gitc "$R" commit -qm esc
 HEAD=$(gitc "$R" rev-parse HEAD)
 
 run_scenario escape "$R" "$BASE" "$HEAD" --files 'stacks/**'
+
+# ── fixture 4: vanished stack (added then removed within the range) ────
+R=$WORK/vanished; new_repo "$R"
+echo "readme" > "$R/README.md"
+gitc "$R" add -A && gitc "$R" commit -qm base
+BASE=$(gitc "$R" rev-parse HEAD)
+mkdir -p "$R/stacks/gone"
+echo "name: gone" > "$R/stacks/gone/Pulumi.yaml"
+echo "[]" > "$R/stacks/gone/schema.json"
+gitc "$R" add -A && gitc "$R" commit -qm add-stack
+gitc "$R" rm -rq stacks/gone
+gitc "$R" commit -qm remove-stack
+HEAD=$(gitc "$R" rev-parse HEAD)
+
+# NOTE: last_seen_sha is commit-dependent, so goldens normalize 40-hex SHAs.
+run_scenario vanished_destroy "$R" "$BASE" "$HEAD" \
+  --files-group-by 'stacks/{group}/**' --detect-vanished
+
+# ── fixture 5: endpoint deletion routed to destroy ──────────────────────
+R=$WORK/deltodestroy; new_repo "$R"
+mkdir -p "$R/stacks/old"
+echo "name: old" > "$R/stacks/old/Pulumi.yaml"
+gitc "$R" add -A && gitc "$R" commit -qm base
+BASE=$(gitc "$R" rev-parse HEAD)
+gitc "$R" rm -rq stacks/old
+gitc "$R" commit -qm rm
+HEAD=$(gitc "$R" rev-parse HEAD)
+
+run_scenario deleted_to_destroy "$R" "$BASE" "$HEAD" \
+  --files-group-by 'stacks/{group}/**' --detect-vanished --deleted-to-destroy
 
 if [ "$MODE" != "--update" ] && [ "$FAIL" -ne 0 ]; then
   echo "golden e2e FAILED"

@@ -370,6 +370,17 @@ fn run_detect(args: DetectArgs) -> i32 {
                     obj["concurrency_blocked"] = serde_json::json!(d.concurrency_blocked);
                     obj["concurrency_blocked_by"] = serde_json::json!(d.concurrency_blocked_by);
                 }
+                if !d.vanished_files.is_empty() {
+                    let vanished: Vec<&str> = d
+                        .vanished_files
+                        .iter()
+                        .filter_map(|v| interner.resolve(v.path))
+                        .collect();
+                    obj["vanished"] = serde_json::json!(vanished);
+                }
+                if let Some(sha) = d.reconstruct_sha.and_then(|s| interner.resolve(s)) {
+                    obj["last_seen_sha"] = serde_json::json!(sha);
+                }
                 obj
             })
             .collect();

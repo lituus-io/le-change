@@ -1,20 +1,20 @@
 matrix<<LECHANGE_EOF_NORMALIZED
-{"include":[]}
+{"include":[{"stack":"old","files":"stacks/old/Pulumi.yaml","count":1,"action":"destroy","reason":"deleted","last_seen_sha":"GITSHA"}]}
 LECHANGE_EOF_NORMALIZED
 has_changes=true
 changed_files<<LECHANGE_EOF_NORMALIZED
-stacks/s1/Pulumi.yaml stacks/s2/Pulumi.yaml stacks/s3/Pulumi.yaml
+stacks/old/Pulumi.yaml
 LECHANGE_EOF_NORMALIZED
-changed_files_count=3
+changed_files_count=1
 any_changed=true
 added_files<<LECHANGE_EOF_NORMALIZED
-stacks/s3/Pulumi.yaml
+
 LECHANGE_EOF_NORMALIZED
 modified_files<<LECHANGE_EOF_NORMALIZED
-stacks/s1/Pulumi.yaml
+
 LECHANGE_EOF_NORMALIZED
 deleted_files<<LECHANGE_EOF_NORMALIZED
-stacks/s2/Pulumi.yaml
+stacks/old/Pulumi.yaml
 LECHANGE_EOF_NORMALIZED
 vanished_files<<LECHANGE_EOF_NORMALIZED
 
@@ -26,10 +26,10 @@ files_to_skip<<LECHANGE_EOF_NORMALIZED
 
 LECHANGE_EOF_NORMALIZED
 deploy_decisions<<LECHANGE_EOF_NORMALIZED
-[]
+[{"action":"destroy","count":1,"files":["stacks/old/Pulumi.yaml"],"key":"old","last_seen_sha":"GITSHA"}]
 LECHANGE_EOF_NORMALIZED
 diagnostics<<LECHANGE_EOF_NORMALIZED
-[]
+[{"category":"pattern_load","message":"files_group_by discovery failed: Configuration error: files_group_by scan directory 'stacks' does not exist","severity":"soft_error"}]
 LECHANGE_EOF_NORMALIZED
 vanished<<LECHANGE_EOF_NORMALIZED
 []

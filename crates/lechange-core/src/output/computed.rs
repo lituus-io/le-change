@@ -213,6 +213,16 @@ impl ComputedOutputs {
                 .collect()
         };
 
+        // A group's vanished members: rides along on every decision for
+        // visibility and drives Destroy classification.
+        let vanished_of = |group: &GroupResult| -> Vec<VanishedFile> {
+            group
+                .vanished_indices
+                .iter()
+                .map(|&i| result.vanished_files[i as usize])
+                .collect()
+        };
+
         // Compute group deploy decisions
         // Destroy classification, shared by both decision branches. Returns
         // Some(decision) when the group must be a Destroy: it has vanished
@@ -220,11 +230,7 @@ impl ComputedOutputs {
         // deleted_to_destroy, only endpoint-deleted members.
         let destroy_decision =
             |group: &GroupResult, cb: bool, cb_by: u32| -> Option<GroupDeployDecision> {
-                let group_vanished: Vec<VanishedFile> = group
-                    .vanished_indices
-                    .iter()
-                    .map(|&i| result.vanished_files[i as usize])
-                    .collect();
+                let group_vanished = vanished_of(group);
                 let live_changes = group
                     .matched_indices
                     .iter()
@@ -327,7 +333,7 @@ impl ComputedOutputs {
                             total_files,
                             concurrency_blocked: cb,
                             concurrency_blocked_by: cb_by,
-                            vanished_files: Vec::new(),
+                            vanished_files: vanished_of(group),
                             reconstruct_sha: None,
                         });
                     } else {
@@ -361,7 +367,7 @@ impl ComputedOutputs {
                             total_files,
                             concurrency_blocked: cb,
                             concurrency_blocked_by: cb_by,
-                            vanished_files: Vec::new(),
+                            vanished_files: vanished_of(group),
                             reconstruct_sha: None,
                         });
                     }
@@ -391,7 +397,7 @@ impl ComputedOutputs {
                         total_files,
                         concurrency_blocked: cb,
                         concurrency_blocked_by: cb_by,
-                        vanished_files: Vec::new(),
+                        vanished_files: vanished_of(group),
                         reconstruct_sha: None,
                     });
                 }
