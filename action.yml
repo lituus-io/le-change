@@ -42,6 +42,15 @@ inputs:
   deploy_matrix_include_concurrency:
     description: 'Include concurrency_blocked fields in deploy matrix'
     default: 'false'
+  detect_vanished:
+    description: 'Detect files added then removed within the PR history (requires fetch-depth: 0; shallow clones degrade to a diagnostic + empty result)'
+    default: 'false'
+  vanished_max_commits:
+    description: 'Max commits the vanished-detection walk visits (0 = unlimited)'
+    default: '500'
+  deleted_to_destroy:
+    description: 'Emit action:destroy deploy-matrix entries for groups whose files were all deleted at the endpoint diff (last_seen_sha = base SHA)'
+    default: 'false'
   token:
     description: 'GitHub token for API access'
     default: ${{ github.token }}
@@ -92,6 +101,12 @@ outputs:
   diagnostics:
     description: 'JSON array of diagnostic messages'
     value: ${{ steps.detect.outputs.diagnostics }}
+  vanished_files:
+    description: 'Space-separated list of files added then removed within the PR history'
+    value: ${{ steps.detect.outputs.vanished_files }}
+  vanished:
+    description: 'JSON array of {path, last_seen_sha} entries for vanished files'
+    value: ${{ steps.detect.outputs.vanished }}
 
 runs:
   using: 'composite'
@@ -181,5 +196,8 @@ runs:
         LECHANGE_WORKFLOW_NAME_FILTER: ${{ inputs.workflow_name_filter }}
         LECHANGE_DEPLOY_MATRIX_INCLUDE_REASON: ${{ inputs.deploy_matrix_include_reason }}
         LECHANGE_DEPLOY_MATRIX_INCLUDE_CONCURRENCY: ${{ inputs.deploy_matrix_include_concurrency }}
+        LECHANGE_DETECT_VANISHED: ${{ inputs.detect_vanished }}
+        LECHANGE_VANISHED_MAX_COMMITS: ${{ inputs.vanished_max_commits }}
+        LECHANGE_DELETED_TO_DESTROY: ${{ inputs.deleted_to_destroy }}
         LECHANGE_BASE_SHA: ${{ inputs.base_sha }}
         LECHANGE_SHA: ${{ inputs.sha }}

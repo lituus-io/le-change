@@ -1,0 +1,36 @@
+matrix<<LECHANGE_EOF_NORMALIZED
+{"include":[{"stack":"s1","files":"stacks/s1/Pulumi.yaml","count":1,"action":"deploy","reason":"new_change"},{"stack":"s3","files":"stacks/s3/Pulumi.yaml","count":1,"action":"deploy","reason":"new_change"}]}
+LECHANGE_EOF_NORMALIZED
+has_changes=true
+changed_files<<LECHANGE_EOF_NORMALIZED
+docs/readme.md stacks/s1/Pulumi.yaml stacks/s2/Pulumi.yaml stacks/s3/Pulumi.yaml
+LECHANGE_EOF_NORMALIZED
+changed_files_count=4
+any_changed=true
+added_files<<LECHANGE_EOF_NORMALIZED
+stacks/s3/Pulumi.yaml
+LECHANGE_EOF_NORMALIZED
+modified_files<<LECHANGE_EOF_NORMALIZED
+docs/readme.md stacks/s1/Pulumi.yaml
+LECHANGE_EOF_NORMALIZED
+deleted_files<<LECHANGE_EOF_NORMALIZED
+stacks/s2/Pulumi.yaml
+LECHANGE_EOF_NORMALIZED
+vanished_files<<LECHANGE_EOF_NORMALIZED
+
+LECHANGE_EOF_NORMALIZED
+files_to_rebuild<<LECHANGE_EOF_NORMALIZED
+
+LECHANGE_EOF_NORMALIZED
+files_to_skip<<LECHANGE_EOF_NORMALIZED
+
+LECHANGE_EOF_NORMALIZED
+deploy_decisions<<LECHANGE_EOF_NORMALIZED
+[{"action":"deploy","count":1,"files":["stacks/s1/Pulumi.yaml"],"key":"s1","reason":"new_change"},{"action":"deploy","count":1,"files":["stacks/s3/Pulumi.yaml"],"key":"s3","reason":"new_change"}]
+LECHANGE_EOF_NORMALIZED
+diagnostics<<LECHANGE_EOF_NORMALIZED
+[]
+LECHANGE_EOF_NORMALIZED
+vanished<<LECHANGE_EOF_NORMALIZED
+[]
+LECHANGE_EOF_NORMALIZED

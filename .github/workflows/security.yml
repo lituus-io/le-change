@@ -54,9 +54,15 @@ jobs:
         with:
           components: clippy
 
+      # Gating (-D) on production code only: --lib/--bins excludes tests,
+      # which legitimately unwrap. Verified zero violations at promotion time.
       - name: Run Clippy with security lints
         run: |
-          cargo clippy --all-targets --all-features -- \
-            -W clippy::unwrap_used \
-            -W clippy::expect_used \
-            -W clippy::panic
+          cargo clippy --lib -p le-change --locked -- \
+            -D clippy::unwrap_used \
+            -D clippy::expect_used \
+            -D clippy::panic
+          cargo clippy --bins -p lechange-cli --locked -- \
+            -D clippy::unwrap_used \
+            -D clippy::expect_used \
+            -D clippy::panic

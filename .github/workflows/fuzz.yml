@@ -21,10 +21,11 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          - fuzz_diff_parser
           - fuzz_pattern_matcher
           - fuzz_interner
           - fuzz_config_parser
+          - fuzz_file_path_handler
+          - fuzz_ancestor_recovery
 
     steps:
       - uses: actions/checkout@v4

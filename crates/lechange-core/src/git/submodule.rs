@@ -30,7 +30,7 @@ impl SubmoduleProcessor {
                 submodules.push(SubmoduleInfo {
                     path: path.to_string(),
                     name: submodule.name().unwrap_or(path).to_string(),
-                    url: submodule.url().map(|s| s.to_string()),
+                    url: submodule.url().ok().flatten().map(|s| s.to_string()),
                 });
             }
         }

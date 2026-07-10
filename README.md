@@ -18,6 +18,7 @@ Rust core library with a CLI binary, GitHub Action, and Python bindings.
 - Workflow failure tracking with per-run or per-job granularity
 - Concurrent workflow detection with deadlock-safe priority ordering
 - Ancestor directory file association for monorepo layouts
+- Vanished-file detection: files added then removed within a PR (invisible to endpoint diffs) surface as `action: destroy` matrix entries with the commit to reconstruct them from
 - Static musl binaries for Linux (zero runtime dependencies)
 
 ## GitHub Action
@@ -65,6 +66,9 @@ jobs:
 | `workflow_name_filter` | | Glob pattern to filter workflow names |
 | `deploy_matrix_include_reason` | `false` | Add action/reason to matrix entries |
 | `deploy_matrix_include_concurrency` | `false` | Add concurrency info to matrix entries |
+| `detect_vanished` | `false` | Detect files added then removed within the PR history (needs `fetch-depth: 0`) |
+| `vanished_max_commits` | `500` | Max commits the vanished walk visits (0 = unlimited) |
+| `deleted_to_destroy` | `false` | Emit `action: destroy` matrix entries for fully-deleted groups |
 | `token` | `github.token` | GitHub token for API access |
 | `base_sha` | | Override base commit SHA |
 | `sha` | | Override head commit SHA |
@@ -85,6 +89,8 @@ jobs:
 | `files_to_rebuild` | Files needing rebuild |
 | `files_to_skip` | Files safe to skip |
 | `diagnostics` | JSON array of diagnostic messages |
+| `vanished_files` | Space-separated files added then removed within the PR history |
+| `vanished` | JSON array of `{path, last_seen_sha}` for vanished files |
 
 ## CLI
 

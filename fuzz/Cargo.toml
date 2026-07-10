@@ -12,12 +12,6 @@ libfuzzer-sys = "0.4"
 lechange-core = { package = "le-change", path = "../crates/lechange-core" }
 
 [[bin]]
-name = "fuzz_diff_parser"
-path = "fuzz_targets/fuzz_diff_parser.rs"
-test = false
-doc = false
-
-[[bin]]
 name = "fuzz_pattern_matcher"
 path = "fuzz_targets/fuzz_pattern_matcher.rs"
 test = false
@@ -32,5 +26,17 @@ doc = false
 [[bin]]
 name = "fuzz_config_parser"
 path = "fuzz_targets/fuzz_config_parser.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_file_path_handler"
+path = "fuzz_targets/fuzz_file_path_handler.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_ancestor_recovery"
+path = "fuzz_targets/fuzz_ancestor_recovery.rs"
 test = false
 doc = false

@@ -19,12 +19,10 @@ struct GitHubFile {
 /// GitHub API response for comparing two refs
 #[derive(Debug, Deserialize)]
 struct GitHubCompareResponse {
-    #[allow(dead_code)]
     total_commits: u32,
     files: Vec<GitHubFile>,
     /// Whether the file list was truncated (too many files)
     #[serde(default)]
-    #[allow(dead_code)]
     files_truncated: bool,
 }
 

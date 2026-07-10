@@ -5,13 +5,18 @@ use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-/// LRU cache for symlink detection results
-struct LruCache<K, V> {
+/// Bounded cache for symlink detection results.
+///
+/// Eviction is clear-on-full: when the map reaches `max_size` it is emptied
+/// wholesale. That is deliberate — entries are cheap to recompute (one lstat)
+/// and a CI run rarely revisits evicted paths, so tracking access order would
+/// cost more than it saves.
+struct BoundedCache<K, V> {
     map: HashMap<K, V>,
     max_size: usize,
 }
 
-impl<K: Eq + std::hash::Hash + Clone, V> LruCache<K, V> {
+impl<K: Eq + std::hash::Hash + Clone, V> BoundedCache<K, V> {
     fn new(max_size: usize) -> Self {
         Self {
             map: HashMap::with_capacity(max_size),
@@ -25,8 +30,6 @@ impl<K: Eq + std::hash::Hash + Clone, V> LruCache<K, V> {
 
     fn put(&mut self, key: K, value: V) {
         if self.map.len() >= self.max_size {
-            // Simple eviction: clear when full
-            // A real LRU would track access order
             self.map.clear();
         }
         self.map.insert(key, value);
@@ -35,8 +38,7 @@ impl<K: Eq + std::hash::Hash + Clone, V> LruCache<K, V> {
 
 /// File operations handler with symlink caching
 pub struct FileOps {
-    symlink_cache: RwLock<LruCache<PathBuf, bool>>,
-    _cache_size: usize,
+    symlink_cache: RwLock<BoundedCache<PathBuf, bool>>,
 }
 
 impl FileOps {
@@ -48,40 +50,11 @@ impl FileOps {
     /// Create with custom cache size
     pub fn with_cache_size(cache_size: usize) -> Self {
         Self {
-            symlink_cache: RwLock::new(LruCache::new(cache_size)),
-            _cache_size: cache_size,
+            symlink_cache: RwLock::new(BoundedCache::new(cache_size)),
         }
     }
 
-    /// Check if a path is a symlink (async version)
-    pub async fn is_symlink(&self, path: &Path) -> Result<bool> {
-        let path_buf = path.to_path_buf();
-
-        // Check cache first
-        {
-            let cache = self.symlink_cache.read();
-            if let Some(&cached) = cache.get(&path_buf) {
-                return Ok(cached);
-            }
-        }
-
-        // Check disk with tokio::fs
-        let metadata = tokio::fs::symlink_metadata(&path_buf)
-            .await
-            .map_err(Error::Io)?;
-
-        let is_link = metadata.file_type().is_symlink();
-
-        // Cache result
-        {
-            let mut cache = self.symlink_cache.write();
-            cache.put(path_buf, is_link);
-        }
-
-        Ok(is_link)
-    }
-
-    /// Check if a path is a symlink (sync version for Rayon)
+    /// Check if a path is a symlink (sync, called from Rayon workers)
     pub fn is_symlink_sync(&self, path: &Path) -> Result<bool> {
         let path_buf = path.to_path_buf();
 
@@ -105,12 +78,6 @@ impl FileOps {
         }
 
         Ok(is_link)
-    }
-
-    /// Clear the symlink cache
-    pub fn clear_cache(&self) {
-        let mut cache = self.symlink_cache.write();
-        cache.map.clear();
     }
 }
 
@@ -156,32 +123,18 @@ mod tests {
     }
 
     #[test]
-    fn test_clear_cache() {
+    fn test_cache_eviction_clears_when_full() {
         let dir = TempDir::new().unwrap();
-        let file_path = dir.path().join("test.txt");
-        fs::write(&file_path, "content").unwrap();
+        let ops = FileOps::with_cache_size(2);
 
-        let ops = FileOps::new();
+        for i in 0..5 {
+            let p = dir.path().join(format!("f{i}.txt"));
+            fs::write(&p, "content").unwrap();
+            assert!(!ops.is_symlink_sync(&p).unwrap());
+        }
 
-        // Populate cache
-        ops.is_symlink_sync(&file_path).unwrap();
-
-        // Clear cache
-        ops.clear_cache();
-
-        // Cache should be empty now (we can't directly verify, but no errors)
-        let result = ops.is_symlink_sync(&file_path).unwrap();
-        assert!(!result);
-    }
-
-    #[tokio::test]
-    async fn test_is_symlink_async() {
-        let dir = TempDir::new().unwrap();
-        let file_path = dir.path().join("test.txt");
-        fs::write(&file_path, "content").unwrap();
-
-        let ops = FileOps::new();
-        let is_link = ops.is_symlink(&file_path).await.unwrap();
-        assert!(!is_link);
+        // Entries remain resolvable after eviction cycles
+        let p0 = dir.path().join("f0.txt");
+        assert!(!ops.is_symlink_sync(&p0).unwrap());
     }
 }

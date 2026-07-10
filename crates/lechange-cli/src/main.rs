@@ -7,7 +7,6 @@ use lechange_core::output::computed::ComputedOutputs;
 use lechange_core::output::json_format::{format_deploy_matrix, safe_output_escape};
 use lechange_core::types::{GroupDeployAction, InputConfig};
 use lechange_core::StringInterner;
-use std::borrow::Cow;
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -81,6 +80,20 @@ struct DetectArgs {
     /// Include concurrency_blocked fields in deploy matrix
     #[arg(long, env = "LECHANGE_DEPLOY_MATRIX_INCLUDE_CONCURRENCY")]
     deploy_matrix_include_concurrency: bool,
+
+    /// Detect files added then removed within the PR history (base..head
+    /// first-parent walk); requires sufficient clone depth (fetch-depth: 0)
+    #[arg(long, env = "LECHANGE_DETECT_VANISHED")]
+    detect_vanished: bool,
+
+    /// Max commits the vanished-detection walk visits (0 = unlimited)
+    #[arg(long, env = "LECHANGE_VANISHED_MAX_COMMITS", default_value_t = 500)]
+    vanished_max_commits: u32,
+
+    /// Emit Destroy deploy-matrix entries for groups whose files were all
+    /// deleted at the endpoint diff (reconstruct_sha = base SHA)
+    #[arg(long, env = "LECHANGE_DELETED_TO_DESTROY")]
+    deleted_to_destroy: bool,
 
     /// GitHub token for API access
     #[arg(long, env = "GITHUB_TOKEN")]
@@ -159,6 +172,30 @@ fn clean_opt(v: &Option<String>) -> Option<&str> {
     v.as_deref().filter(|s| !s.is_empty())
 }
 
+/// Pure arg-to-config mapping: cleaned env inputs threaded onto the core
+/// builder. Separated from run_detect so it is unit-testable.
+fn build_config(args: &DetectArgs) -> InputConfig<'_> {
+    InputConfig::github_actions_defaults()
+        .with_base_sha(clean_opt(&args.base_sha))
+        .with_sha(clean_opt(&args.sha))
+        .with_files(clean_vec(&args.files))
+        .with_files_ignore(clean_vec(&args.files_ignore))
+        .with_files_group_by(clean_opt(&args.files_group_by))
+        .with_files_group_by_key(&args.files_group_by_key)
+        .with_files_ancestor_lookup_depth(args.files_ancestor_lookup_depth)
+        .with_track_workflow_failures(args.track_workflow_failures)
+        .with_failure_tracking_level_str(&args.failure_tracking_level)
+        .with_wait_for_active_workflows(args.wait_for_active_workflows)
+        .with_workflow_max_wait_seconds(args.workflow_max_wait_seconds)
+        .with_workflow_name_filter(clean_opt(&args.workflow_name_filter))
+        .with_deploy_matrix_include_reason(args.deploy_matrix_include_reason)
+        .with_deploy_matrix_include_concurrency(args.deploy_matrix_include_concurrency)
+        .with_token(clean_opt(&args.token))
+        .with_detect_vanished(args.detect_vanished)
+        .with_vanished_max_commits(args.vanished_max_commits)
+        .with_deleted_to_destroy(args.deleted_to_destroy)
+}
+
 fn run_detect(args: DetectArgs) -> i32 {
     let repo_path = args
         .repo_path
@@ -170,42 +207,7 @@ fn run_detect(args: DetectArgs) -> i32 {
     let include_reason = args.deploy_matrix_include_reason;
     let include_concurrency = args.deploy_matrix_include_concurrency;
 
-    // Clean env var inputs (GHA sets empty strings for unset optional inputs)
-    let files = clean_vec(&args.files);
-    let files_ignore = clean_vec(&args.files_ignore);
-    let files_group_by = clean_opt(&args.files_group_by);
-    let workflow_name_filter = clean_opt(&args.workflow_name_filter);
-    let base_sha = clean_opt(&args.base_sha);
-    let sha = clean_opt(&args.sha);
-    let token = clean_opt(&args.token);
-
-    // Build InputConfig — borrowing from args (zero-copy)
-    let config = InputConfig {
-        base_sha: base_sha.map(Cow::Borrowed),
-        sha: sha.map(Cow::Borrowed),
-        files: files.map(|v| v.into_iter().map(Cow::Borrowed).collect()),
-        files_ignore: files_ignore.map(|v| v.into_iter().map(Cow::Borrowed).collect()),
-        files_group_by: files_group_by.map(Cow::Borrowed),
-        files_group_by_key: Some(Cow::Borrowed(&args.files_group_by_key)),
-        files_ancestor_lookup_depth: args.files_ancestor_lookup_depth,
-        track_workflow_failures: args.track_workflow_failures,
-        failure_tracking_level: match args.failure_tracking_level.as_str() {
-            "job" | "Job" => lechange_core::FailureTrackingLevel::Job,
-            _ => lechange_core::FailureTrackingLevel::Run,
-        },
-        wait_for_active_workflows: args.wait_for_active_workflows,
-        workflow_max_wait_seconds: args.workflow_max_wait_seconds,
-        workflow_name_filter: workflow_name_filter.map(Cow::Borrowed),
-        deploy_matrix_include_reason: include_reason,
-        deploy_matrix_include_concurrency: include_concurrency,
-        token: token.map(Cow::Borrowed),
-        safe_output: true,
-        json: true,
-        escape_json: true,
-        use_posix_path_separator: true,
-        skip_initial_fetch: true,
-        ..Default::default()
-    };
+    let config = build_config(&args);
 
     // Run detection
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -232,11 +234,12 @@ fn run_detect(args: DetectArgs) -> i32 {
             .workflow_result
             .as_ref()
             .map(|wr| &wr.blocked_groups);
-        let outputs = ComputedOutputs::compute_with_concurrency(
+        let outputs = ComputedOutputs::compute_full(
             &processed,
             false,
             blocked_groups,
             Some(&interner),
+            args.deleted_to_destroy,
         );
 
         Ok::<_, lechange_core::Error>((processed, outputs, interner))
@@ -303,6 +306,16 @@ fn run_detect(args: DetectArgs) -> i32 {
         })
         .unwrap_or_default();
 
+    let vanished: Vec<&str> = processed
+        .vanished_files
+        .iter()
+        .filter_map(|v| interner.resolve(v.path))
+        .collect();
+    let vanished_json = lechange_core::output::json_format::format_vanished_json(
+        &processed.vanished_files,
+        resolve,
+    );
+
     let deploy_matrix = format_deploy_matrix(
         &outputs.group_deploy_decisions,
         resolve,
@@ -311,7 +324,9 @@ fn run_detect(args: DetectArgs) -> i32 {
         include_concurrency,
     );
 
-    let has_changes = !all_changed.is_empty() || outputs.has_deployable_groups();
+    let has_changes = !all_changed.is_empty()
+        || outputs.has_deployable_groups()
+        || outputs.has_destroyable_groups();
     let any_changed = !all_changed.is_empty();
 
     // Diagnostics
@@ -321,8 +336,8 @@ fn run_detect(args: DetectArgs) -> i32 {
             .iter()
             .map(|d| {
                 serde_json::json!({
-                    "severity": format!("{:?}", d.severity).to_lowercase(),
-                    "category": format!("{:?}", d.category),
+                    "severity": d.severity.as_str(),
+                    "category": d.category.as_str(),
                     "message": d.message,
                 })
             })
@@ -336,10 +351,7 @@ fn run_detect(args: DetectArgs) -> i32 {
             .group_deploy_decisions
             .iter()
             .map(|d| {
-                let action = match d.action {
-                    GroupDeployAction::Deploy => "deploy",
-                    GroupDeployAction::Skip => "skip",
-                };
+                let action = d.action.as_str();
                 let files: Vec<&str> = d
                     .files_to_rebuild
                     .iter()
@@ -352,20 +364,22 @@ fn run_detect(args: DetectArgs) -> i32 {
                     "count": files.len(),
                 });
                 if include_reason {
-                    let reason = d.reason.map(|r| match r {
-                        lechange_core::types::GroupDeployReason::NewChange => "new_change",
-                        lechange_core::types::GroupDeployReason::PreviousFailure => {
-                            "previous_failure"
-                        }
-                        lechange_core::types::GroupDeployReason::BothNewAndFailed => {
-                            "both_new_and_failed"
-                        }
-                    });
-                    obj["reason"] = serde_json::json!(reason);
+                    obj["reason"] = serde_json::json!(d.reason.map(|r| r.as_str()));
                 }
                 if include_concurrency {
                     obj["concurrency_blocked"] = serde_json::json!(d.concurrency_blocked);
                     obj["concurrency_blocked_by"] = serde_json::json!(d.concurrency_blocked_by);
+                }
+                if !d.vanished_files.is_empty() {
+                    let vanished: Vec<&str> = d
+                        .vanished_files
+                        .iter()
+                        .filter_map(|v| interner.resolve(v.path))
+                        .collect();
+                    obj["vanished"] = serde_json::json!(vanished);
+                }
+                if let Some(sha) = d.reconstruct_sha.and_then(|s| interner.resolve(s)) {
+                    obj["last_seen_sha"] = serde_json::json!(sha);
                 }
                 obj
             })
@@ -385,6 +399,8 @@ fn run_detect(args: DetectArgs) -> i32 {
         files_to_rebuild: &files_to_rebuild,
         files_to_skip: &files_to_skip,
         diagnostics_json: &diagnostics_json,
+        vanished: &vanished,
+        vanished_json: &vanished_json,
     };
 
     let write_result = match output_format {
@@ -419,6 +435,8 @@ struct DetectOutput<'a> {
     files_to_rebuild: &'a [&'a str],
     files_to_skip: &'a [&'a str],
     diagnostics_json: &'a str,
+    vanished: &'a [&'a str],
+    vanished_json: &'a str,
 }
 
 /// Write outputs using GitHub Actions multiline syntax to $GITHUB_OUTPUT
@@ -461,6 +479,7 @@ fn write_gha_output(out: &DetectOutput) -> std::io::Result<()> {
         ("added_files", out.added),
         ("modified_files", out.modified),
         ("deleted_files", out.deleted),
+        ("vanished_files", out.vanished),
         ("files_to_rebuild", out.files_to_rebuild),
         ("files_to_skip", out.files_to_skip),
     ] {
@@ -474,6 +493,9 @@ fn write_gha_output(out: &DetectOutput) -> std::io::Result<()> {
     writeln!(f, "{delim}")?;
     writeln!(f, "diagnostics<<{delim}")?;
     writeln!(f, "{}", safe_output_escape(out.diagnostics_json))?;
+    writeln!(f, "{delim}")?;
+    writeln!(f, "vanished<<{delim}")?;
+    writeln!(f, "{}", safe_output_escape(out.vanished_json))?;
     writeln!(f, "{delim}")?;
 
     // Summary to stdout (visible in job log)
@@ -489,6 +511,13 @@ fn write_gha_output(out: &DetectOutput) -> std::io::Result<()> {
         out.modified.len(),
         out.deleted.len()
     )?;
+    if !out.vanished.is_empty() {
+        writeln!(
+            w,
+            "Vanished (added then removed in range): {}",
+            out.vanished.len()
+        )?;
+    }
     writeln!(w, "Has deployable changes: {}", out.has_changes)?;
     if !out.files_to_rebuild.is_empty() {
         writeln!(w, "Files to rebuild: {}", out.files_to_rebuild.len())?;
@@ -507,6 +536,8 @@ fn write_json_output(out: &DetectOutput) -> std::io::Result<()> {
         serde_json::from_str(out.deploy_decisions_json).unwrap_or(serde_json::json!([]));
     let diags_val: serde_json::Value =
         serde_json::from_str(out.diagnostics_json).unwrap_or(serde_json::json!([]));
+    let vanished_val: serde_json::Value =
+        serde_json::from_str(out.vanished_json).unwrap_or(serde_json::json!([]));
 
     let output = serde_json::json!({
         "matrix": matrix_val,
@@ -517,6 +548,8 @@ fn write_json_output(out: &DetectOutput) -> std::io::Result<()> {
         "added_files": out.added,
         "modified_files": out.modified,
         "deleted_files": out.deleted,
+        "vanished_files": out.vanished,
+        "vanished": vanished_val,
         "deploy_decisions": decisions_val,
         "files_to_rebuild": out.files_to_rebuild,
         "files_to_skip": out.files_to_skip,
@@ -573,6 +606,7 @@ fn write_text_output(
             let action = match d.action {
                 GroupDeployAction::Deploy => "DEPLOY",
                 GroupDeployAction::Skip => "skip",
+                GroupDeployAction::Destroy => "DESTROY",
             };
             writeln!(w, "  [{action}] {key} ({} files)", d.total_files)?;
         }
@@ -596,4 +630,114 @@ fn write_text_output(
 
     writeln!(w, "\nHas deployable changes: {}", out.has_changes)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base_args() -> DetectArgs {
+        DetectArgs {
+            files: None,
+            files_ignore: None,
+            files_group_by: None,
+            files_group_by_key: "name".to_string(),
+            files_ancestor_lookup_depth: 0,
+            track_workflow_failures: false,
+            failure_tracking_level: "run".to_string(),
+            wait_for_active_workflows: false,
+            workflow_max_wait_seconds: 300,
+            workflow_name_filter: None,
+            deploy_matrix_include_reason: false,
+            deploy_matrix_include_concurrency: false,
+            token: None,
+            base_sha: None,
+            sha: None,
+            output_format: None,
+            repo_path: None,
+            detect_vanished: false,
+            vanished_max_commits: 500,
+            deleted_to_destroy: false,
+        }
+    }
+
+    #[test]
+    fn test_clean_vec_filters_empty_env_strings() {
+        // GHA sets "" for unset optional inputs; value_delimiter yields [""]
+        assert_eq!(clean_vec(&Some(vec!["".to_string()])), None);
+        assert_eq!(clean_vec(&None), None);
+        assert_eq!(
+            clean_vec(&Some(vec![
+                "a".to_string(),
+                "".to_string(),
+                "b".to_string()
+            ])),
+            Some(vec!["a", "b"])
+        );
+    }
+
+    #[test]
+    fn test_clean_opt_filters_empty_env_strings() {
+        assert_eq!(clean_opt(&Some("".to_string())), None);
+        assert_eq!(clean_opt(&None), None);
+        assert_eq!(clean_opt(&Some("x".to_string())), Some("x"));
+    }
+
+    #[test]
+    fn test_output_format_detection() {
+        assert!(matches!(
+            OutputFormat::detect(Some("json")),
+            OutputFormat::Json
+        ));
+        assert!(matches!(
+            OutputFormat::detect(Some("gha")),
+            OutputFormat::Gha
+        ));
+        assert!(matches!(
+            OutputFormat::detect(Some("text")),
+            OutputFormat::Text
+        ));
+        // Explicit beats environment
+        assert!(matches!(
+            OutputFormat::detect(Some("text")),
+            OutputFormat::Text
+        ));
+    }
+
+    #[test]
+    fn test_build_config_applies_gha_defaults() {
+        let args = base_args();
+        let config = build_config(&args);
+        assert!(config.safe_output);
+        assert!(config.json);
+        assert!(config.escape_json);
+        assert!(config.use_posix_path_separator);
+        assert!(config.skip_initial_fetch);
+        assert!(config.base_sha.is_none());
+        assert!(config.files.is_none());
+    }
+
+    #[test]
+    fn test_build_config_maps_args() {
+        let mut args = base_args();
+        args.base_sha = Some("abc123".to_string());
+        args.sha = Some("".to_string()); // empty env input must clean to None
+        args.files = Some(vec!["stacks/**/Pulumi.yaml".to_string()]);
+        args.files_group_by = Some("stacks/{group}/**".to_string());
+        args.files_group_by_key = "path".to_string();
+        args.failure_tracking_level = "job".to_string();
+        args.deploy_matrix_include_reason = true;
+
+        let config = build_config(&args);
+        assert_eq!(config.base_sha.as_deref(), Some("abc123"));
+        assert!(config.sha.is_none());
+        assert_eq!(config.files.as_ref().map(|f| f.len()), Some(1));
+        assert_eq!(config.files_group_by.as_deref(), Some("stacks/{group}/**"));
+        assert_eq!(config.files_group_by_key.as_deref(), Some("path"));
+        assert_eq!(
+            config.failure_tracking_level,
+            lechange_core::FailureTrackingLevel::Job
+        );
+        assert!(config.deploy_matrix_include_reason);
+    }
 }

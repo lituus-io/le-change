@@ -65,6 +65,9 @@ fn build_result_with_recovery(
         diagnostics: Vec::new(),
         workflow_result: None,
         ci_decision: None,
+        vanished_files: Vec::new(),
+        base_sha: None,
+        head_sha: None,
     }
 }
 
@@ -144,12 +147,16 @@ fn test_ancestor_with_groups() {
         group_results: vec![GroupResult {
             key: prod_key,
             matched_indices: matched,
+            vanished_indices: Vec::new(),
         }],
         additions: 0,
         deletions: 0,
         diagnostics: Vec::new(),
         workflow_result: None,
         ci_decision: None,
+        vanished_files: Vec::new(),
+        base_sha: None,
+        head_sha: None,
     };
 
     let outputs = ComputedOutputs::compute(&result, false);
@@ -187,6 +194,9 @@ fn test_ancestor_diagnostic() {
         }],
         workflow_result: None,
         ci_decision: None,
+        vanished_files: Vec::new(),
+        base_sha: None,
+        head_sha: None,
     };
 
     // Verify the diagnostic is present

@@ -296,8 +296,28 @@ async fn test_full_pipeline_with_workflow_tracking() {
         }
     };
 
+    // Pin explicit SHAs: on a PR runner the checkout is a detached merge
+    // commit and GITHUB_HEAD_REF names a branch that has no local ref, so
+    // event-aware resolution would fail. HEAD~1..HEAD is hermetic.
+    let rev = |spec: &str| -> Option<String> {
+        let out = std::process::Command::new("git")
+            .args(["rev-parse", spec])
+            .current_dir(&repo_path)
+            .output()
+            .ok()?;
+        out.status
+            .success()
+            .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+    };
+    let (Some(head), Some(base)) = (rev("HEAD"), rev("HEAD~1")) else {
+        println!("Shallow checkout without HEAD~1, skipping test");
+        return;
+    };
+
     let interner = StringInterner::new();
     let config = InputConfig {
+        base_sha: Some(std::borrow::Cow::Borrowed(&base)),
+        sha: Some(std::borrow::Cow::Borrowed(&head)),
         track_workflow_failures: true,
         workflow_lookback_commits: 3,
         wait_for_active_workflows: false, // Don't wait in test
@@ -592,7 +612,7 @@ fn test_job_level_partitioning_and_merge() {
     // Now test CI decision with these results
     use lechange_core::coordination::CiDecisionEngine;
 
-    let engine = CiDecisionEngine::new(&interner);
+    let engine = CiDecisionEngine::new();
     let decision = engine.compute(&current_files, &failures, &successes);
 
     // staging should rebuild (new change)

@@ -1,6 +1,6 @@
 [package]
 name = "le-change"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 authors = ["terekete <spicyzhug@gmail.com>"]
 description = "Ultra-fast Git change detection library with zero-cost abstractions"
@@ -15,7 +15,7 @@ path = "src/lib.rs"
 
 [dependencies]
 # Git operations - zero-copy bindings
-git2 = { version = "0.18", default-features = false }
+git2 = { version = "0.21", default-features = false }
 
 # Pattern matching - compiled glob patterns
 globset = "0.4"
@@ -24,13 +24,12 @@ globset = "0.4"
 rayon = "1.8"
 
 # Async runtime
-tokio = { version = "1.35", features = ["rt-multi-thread", "macros", "fs", "time"] }
+tokio = { version = "1.35", features = ["rt-multi-thread", "time"] }
 
 # HTTP client for GitHub API
-reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.13", features = ["json", "query", "http2", "rustls"], default-features = false }
 
 # Fast string operations
-memchr = "2.7"
 
 # Thread-safe locks (faster than std)
 parking_lot = "0.12"
@@ -38,17 +37,14 @@ parking_lot = "0.12"
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-serde_yaml = "0.9"
 
-# Async utilities
-futures = "0.3"
+# Async utilities (join/join_all/try_join_all only)
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 
 # Date/time parsing for workflow timestamps
 chrono = { version = "0.4", default-features = false, features = ["std"] }
+serde_norway = "0.9.42"
 
-# Error handling
-thiserror = "1.0"
-anyhow = "1.0"
 
 [dev-dependencies]
 # Testing

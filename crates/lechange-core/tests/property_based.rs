@@ -193,6 +193,9 @@ proptest! {
             diagnostics: Vec::new(),
             workflow_result: None,
             ci_decision: None,
+            vanished_files: Vec::new(),
+            base_sha: None,
+            head_sha: None,
         };
 
         let outputs = ComputedOutputs::compute(&result, false);
@@ -290,7 +293,7 @@ proptest! {
             Vec::new()
         };
 
-        let engine = CiDecisionEngine::new(&interner);
+        let engine = CiDecisionEngine::new();
         let decision = engine.compute(&current, &failures, &successes);
 
         // Invariant: rebuild ∩ skip = ∅
@@ -328,7 +331,7 @@ proptest! {
             })
             .collect();
 
-        let engine = CiDecisionEngine::new(&interner);
+        let engine = CiDecisionEngine::new();
         let decision = engine.compute(&current, &[], &[]);
 
         // All current_changes files must appear in files_to_rebuild
@@ -431,6 +434,8 @@ proptest! {
                     total_files: 1,
                     concurrency_blocked: i % 3 == 0,
                     concurrency_blocked_by: if i % 3 == 0 { 1 } else { 0 },
+                vanished_files: Vec::new(),
+                reconstruct_sha: None,
                 }
             })
             .collect();
@@ -493,10 +498,12 @@ proptest! {
                 lechange_core::types::GroupResult {
                     key: interner.intern("a"),
                     matched_indices: group_a_indices,
+                    vanished_indices: Vec::new(),
                 },
                 lechange_core::types::GroupResult {
                     key: interner.intern("b"),
                     matched_indices: group_b_indices,
+                    vanished_indices: Vec::new(),
                 },
             ],
             additions: 0,
@@ -504,6 +511,9 @@ proptest! {
             diagnostics: Vec::new(),
             workflow_result: None,
             ci_decision: None,
+            vanished_files: Vec::new(),
+            base_sha: None,
+            head_sha: None,
         };
 
         let outputs = ComputedOutputs::compute(&result, false);

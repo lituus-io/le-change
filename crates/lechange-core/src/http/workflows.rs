@@ -8,8 +8,6 @@ use serde::Deserialize;
 /// GitHub API response for workflow runs list
 #[derive(Debug, Deserialize)]
 struct WorkflowRunsResponse {
-    #[allow(dead_code)]
-    total_count: u32,
     workflow_runs: Vec<GitHubWorkflowRun>,
 }
 
@@ -28,8 +26,6 @@ struct GitHubWorkflowRun {
 /// GitHub API response for workflow jobs list
 #[derive(Debug, Deserialize)]
 struct WorkflowJobsResponse {
-    #[allow(dead_code)]
-    total_count: u32,
     jobs: Vec<GitHubWorkflowJob>,
 }
 
@@ -40,8 +36,6 @@ struct GitHubWorkflowJob {
     name: String,
     status: String,
     conclusion: Option<String>,
-    #[allow(dead_code)]
-    run_id: u64,
     started_at: Option<String>,
     completed_at: Option<String>,
 }
@@ -49,16 +43,12 @@ struct GitHubWorkflowJob {
 /// GitHub API response for commit details
 #[derive(Debug, Deserialize)]
 struct GitHubCommit {
-    #[allow(dead_code)]
-    sha: String,
     files: Option<Vec<GitHubCommitFile>>,
 }
 
 #[derive(Debug, Deserialize)]
 struct GitHubCommitFile {
     filename: String,
-    #[allow(dead_code)]
-    status: String,
 }
 
 /// Parse workflow status string to enum
@@ -524,7 +514,6 @@ mod tests {
             name: "build".to_string(),
             status: "completed".to_string(),
             conclusion: Some("success".to_string()),
-            run_id: 1,
             started_at: Some("2024-01-01T10:00:00Z".to_string()),
             completed_at: Some("2024-01-01T10:05:00Z".to_string()),
         };
@@ -550,7 +539,6 @@ mod tests {
             name: "test".to_string(),
             status: "completed".to_string(),
             conclusion: Some("failure".to_string()),
-            run_id: 2,
             started_at: Some("2024-01-01T10:00:00Z".to_string()),
             completed_at: Some("2024-01-01T10:03:00Z".to_string()),
         };
@@ -597,7 +585,6 @@ mod tests {
             name: "pending".to_string(),
             status: "queued".to_string(),
             conclusion: None,
-            run_id: 3,
             started_at: None,
             completed_at: None,
         };

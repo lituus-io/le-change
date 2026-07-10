@@ -30,7 +30,7 @@ jobs:
           key: ubuntu-cargo-bench-${{ hashFiles('**/Cargo.toml') }}
 
       - name: Run benchmarks
-        run: cargo bench -p le-change --no-fail-fast
+        run: cargo bench -p le-change --no-fail-fast --locked
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4

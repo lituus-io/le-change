@@ -71,11 +71,12 @@ impl PyChangeDetector {
                 .workflow_result
                 .as_ref()
                 .map(|wr| &wr.blocked_groups);
-            let outputs = ComputedOutputs::compute_with_concurrency(
+            let outputs = ComputedOutputs::compute_full(
                 &processed,
                 core_config.output_renamed_as_deleted_added,
                 blocked_groups,
                 Some(&interner),
+                core_config.deleted_to_destroy,
             );
 
             Ok((processed, outputs, interner))

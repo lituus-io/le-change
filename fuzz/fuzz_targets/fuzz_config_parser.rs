@@ -19,6 +19,16 @@ fuzz_target!(|data: &[u8]| {
             // Should not panic when accessing fields
             let _ = config.base_sha.as_ref();
             let _ = config.diff_filter.as_ref();
+
+            // Builder path must behave identically to the struct literal
+            let built = InputConfig::github_actions_defaults()
+                .with_base_sha(Some(base_sha))
+                .with_sha(lines.get(1).copied())
+                .with_files_group_by(lines.get(2).copied())
+                .with_files_group_by_key(base_sha)
+                .with_failure_tracking_level_str(base_sha);
+            assert_eq!(built.base_sha.as_deref(), Some(base_sha));
+            assert!(built.safe_output && built.json);
         }
 
         // Test with pattern lists

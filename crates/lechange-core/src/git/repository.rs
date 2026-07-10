@@ -1,13 +1,10 @@
 //! Git repository operations with async support
 
-use std::future::Future;
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
-use crate::git::diff::DiffParser;
 use crate::git::sha::ShaResolver;
 use crate::interner::StringInterner;
-use crate::traits::AsyncGitOps;
 use crate::types::{ChangeType, ChangedFile, DiffResult};
 
 /// Git repository wrapper that handles Send/Sync constraints
@@ -250,7 +247,6 @@ impl GitRepository {
         let diff = repo.diff_tree_to_tree(Some(&base_tree), Some(&head_tree), Some(&mut opts))?;
 
         let mut result = DiffResult::default();
-        let _parser = DiffParser::new(interner);
 
         // Process each delta
         diff.foreach(
@@ -359,47 +355,27 @@ impl GitRepository {
     }
 }
 
-// Implement AsyncGitOps using spawn_blocking
-impl AsyncGitOps for GitRepository {
-    type Error = Error;
-
-    type DiffFuture<'a>
-        = impl Future<Output = Result<DiffResult>> + Send + 'a
-    where
-        Self: 'a;
-
-    type ResolveShaFuture<'a>
-        = impl Future<Output = Result<String>> + Send + 'a
-    where
-        Self: 'a;
-
-    type SubmodulesFuture<'a>
-        = impl Future<Output = Result<Vec<String>>> + Send + 'a
-    where
-        Self: 'a;
-
-    fn diff<'a>(
-        &'a self,
-        base_sha: &'a str,
-        head_sha: &'a str,
-        interner: &'a StringInterner,
-        diff_filter: &'a str,
-    ) -> Self::DiffFuture<'a> {
-        async move {
-            // Clone necessary data for move into spawn_blocking
-            let base_sha = base_sha.to_string();
-            let head_sha = head_sha.to_string();
-            let diff_filter = diff_filter.to_string();
-
-            // StringInterner is Send + Sync, but we can't move it
-            // Instead, we'll use the sync version directly since we're already async
+impl GitRepository {
+    /// Compute the diff between two SHAs, interning paths as they stream out.
+    ///
+    /// The git2 work runs inline on the calling task: the endpoint tree diff is
+    /// CPU/page-cache bound and completes in single-digit milliseconds on real
+    /// repositories, so a spawn_blocking hop would cost more than it saves.
+    pub async fn diff(
+        &self,
+        base_sha: &str,
+        head_sha: &str,
+        interner: &StringInterner,
+        diff_filter: &str,
+    ) -> Result<DiffResult> {
+        {
             let repo = self.get_repo()?;
-            let base_oid = git2::Oid::from_str(&base_sha)?;
-            let head_oid = git2::Oid::from_str(&head_sha)?;
+            let base_oid = git2::Oid::from_str(base_sha)?;
+            let head_oid = git2::Oid::from_str(head_sha)?;
 
             // Get trees (handles empty tree SHA for initial pushes)
-            let base_tree = Self::sha_to_tree(&repo, base_oid, &base_sha)?;
-            let head_tree = Self::sha_to_tree(&repo, head_oid, &head_sha)?;
+            let base_tree = Self::sha_to_tree(&repo, base_oid, base_sha)?;
+            let head_tree = Self::sha_to_tree(&repo, head_oid, head_sha)?;
 
             let mut opts = git2::DiffOptions::new();
             opts.ignore_submodules(true);
@@ -471,33 +447,6 @@ impl AsyncGitOps for GitRepository {
             Ok(result)
         }
     }
-
-    fn resolve_sha<'a>(&'a self, reference: &'a str) -> Self::ResolveShaFuture<'a> {
-        async move {
-            let path = self.path.clone();
-            let reference = reference.to_string();
-
-            tokio::task::spawn_blocking(move || {
-                let temp_repo = GitRepository::open(&path)?;
-                temp_repo.resolve_sha_sync(&reference)
-            })
-            .await
-            .map_err(|e| Error::Runtime(format!("Task join error: {}", e)))?
-        }
-    }
-
-    fn submodules<'a>(&'a self) -> Self::SubmodulesFuture<'a> {
-        async move {
-            let path = self.path.clone();
-
-            tokio::task::spawn_blocking(move || {
-                let temp_repo = GitRepository::open(&path)?;
-                temp_repo.submodules_sync()
-            })
-            .await
-            .map_err(|e| Error::Runtime(format!("Task join error: {}", e)))?
-        }
-    }
 }
 
 // Implement Send + Sync since we handle git2::Repository correctly
@@ -565,15 +514,6 @@ mod tests {
         assert_eq!(sha.len(), 40); // SHA is 40 hex characters
     }
 
-    #[tokio::test]
-    async fn test_async_resolve_sha() {
-        let (_dir, repo) = create_test_repo();
-
-        // Resolve HEAD asynchronously
-        let sha = repo.resolve_sha("HEAD").await.unwrap();
-        assert_eq!(sha.len(), 40);
-    }
-
     #[test]
     fn test_diff_sync() {
         let (dir, repo) = create_test_repo();
@@ -611,6 +551,8 @@ mod tests {
     #[test]
     fn test_is_symlink_in_tree() {
         let (dir, repo) = create_test_repo();
+        // Used only by the unix-gated symlink block below
+        #[cfg_attr(not(unix), allow(unused_variables))]
         let repo_path = dir.path();
 
         // Get the SHA with the regular file

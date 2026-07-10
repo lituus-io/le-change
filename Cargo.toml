@@ -3,13 +3,9 @@ members = [
     "crates/lechange-core",
     "crates/lechange-python",
     "crates/lechange-cli",
-    "crates/lechange-fuzz",
 ]
 exclude = ["fuzz"]
 resolver = "2"
-
-[workspace.dependencies]
-lechange-core = { package = "le-change", path = "crates/lechange-core" }
 
 [profile.release]
 lto = "fat"          # Full LTO for maximum optimization

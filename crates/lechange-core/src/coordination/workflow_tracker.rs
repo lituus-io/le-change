@@ -10,7 +10,7 @@ use crate::types::{
     WorkflowCheckResult, WorkflowConclusion, WorkflowFailure, WorkflowJob, WorkflowRun,
     WorkflowStatus, WorkflowSuccess,
 };
-use futures::future::{join_all, try_join_all};
+use futures_util::future::{join_all, try_join_all};
 use std::collections::{HashMap, HashSet};
 
 /// Extract the matrix key from a job name.
@@ -347,7 +347,7 @@ impl<'a> WorkflowTracker<'a> {
                             .list_workflow_jobs(owner, repo, run.id, self.interner);
 
                     let (files_result, jobs_result) =
-                        futures::future::join(files_fut, jobs_fut).await;
+                        futures_util::future::join(files_fut, jobs_fut).await;
 
                     let commit_files = files_result.ok()?;
                     let all_jobs = jobs_result.ok().unwrap_or_default();
@@ -450,7 +450,7 @@ impl<'a> WorkflowTracker<'a> {
                             .list_workflow_jobs(owner, repo, run.id, self.interner);
 
                     let (files_result, jobs_result) =
-                        futures::future::join(files_fut, jobs_fut).await;
+                        futures_util::future::join(files_fut, jobs_fut).await;
 
                     let commit_files = files_result.ok()?;
                     let all_jobs = jobs_result.ok().unwrap_or_default();
