@@ -3,7 +3,6 @@ members = [
     "crates/lechange-core",
     "crates/lechange-python",
     "crates/lechange-cli",
-    "crates/lechange-fuzz",
 ]
 exclude = ["fuzz"]
 resolver = "2"
