@@ -1,4 +1,9 @@
+# Stable since the removal of impl_trait_in_assoc_type (the last nightly
+# feature). NOTE: this file governs the toolchain everywhere — including CI:
+# dtolnay/rust-toolchain only sets `rustup default`, which rust-toolchain.toml
+# outranks. Fuzzing still runs `cargo +nightly fuzz` (cargo-fuzz sanitizer
+# requirement), independent of this channel.
 [toolchain]
-channel = "nightly"
+channel = "stable"
 components = ["rustfmt", "clippy", "rust-src"]
 profile = "minimal"

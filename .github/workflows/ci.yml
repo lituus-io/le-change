@@ -15,13 +15,19 @@ jobs:
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Windows ships release binaries (release-cli.yml) — it must be tested.
+    # continue-on-error stays until the windows job has a green history,
+    # then flip it to required.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
 
+      # NOTE: rust-toolchain.toml governs the toolchain (it outranks the
+      # `rustup default` this action sets); the action just provisions rustup.
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -34,17 +40,17 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: Build
-        run: cargo build -p le-change -p lechange-cli
+        run: cargo build -p le-change -p lechange-cli --locked
 
       - name: Run tests
-        run: cargo test -p le-change -p lechange-cli
+        run: cargo test -p le-change -p lechange-cli --locked
 
       - name: Clippy
-        run: cargo clippy -p le-change -p lechange-cli -- -D warnings
+        run: cargo clippy -p le-change -p lechange-cli --all-targets --locked -- -D warnings
 
   fmt:
     name: Format
@@ -81,13 +87,13 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ubuntu-cargo-python-${{ hashFiles('**/Cargo.toml') }}
+          key: ubuntu-cargo-python-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install maturin
         run: pip install maturin
 
       - name: Build Python wheel
-        run: maturin build --release --out dist
+        run: maturin build --release --out dist --locked
 
       - name: Install and test
         run: |
