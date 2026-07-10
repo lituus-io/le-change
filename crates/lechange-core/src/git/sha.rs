@@ -462,6 +462,57 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
+    /// Event-aware resolution reads process-global GITHUB_* env. On a CI
+    /// runner those are REAL (e.g. GITHUB_HEAD_REF names the PR branch, which
+    /// does not exist in the fixture repos), so tests that exercise env-driven
+    /// paths must sandbox them: serialized by a lock, cleared for the test,
+    /// restored on drop.
+    struct EnvSandbox {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        saved: Vec<(&'static str, Option<String>)>,
+    }
+
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    const GITHUB_VARS: &[&str] = &[
+        "GITHUB_EVENT_NAME",
+        "GITHUB_HEAD_REF",
+        "GITHUB_BASE_REF",
+        "GITHUB_REF",
+        "GITHUB_REF_NAME",
+        "GITHUB_SHA",
+        "GITHUB_EVENT_PATH",
+        "GITHUB_EVENT_BEFORE",
+    ];
+
+    impl EnvSandbox {
+        fn new() -> Self {
+            let guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+            let saved = GITHUB_VARS
+                .iter()
+                .map(|k| (*k, std::env::var(k).ok()))
+                .collect();
+            for k in GITHUB_VARS {
+                std::env::remove_var(k);
+            }
+            Self {
+                _guard: guard,
+                saved,
+            }
+        }
+    }
+
+    impl Drop for EnvSandbox {
+        fn drop(&mut self) {
+            for (k, v) in &self.saved {
+                match v {
+                    Some(v) => std::env::set_var(k, v),
+                    None => std::env::remove_var(k),
+                }
+            }
+        }
+    }
+
     fn create_test_repo() -> (TempDir, std::path::PathBuf) {
         let dir = TempDir::new().unwrap();
         let repo_path = dir.path().to_path_buf();
@@ -532,6 +583,7 @@ mod tests {
 
     #[test]
     fn test_resolve_base_sha() {
+        let _env = EnvSandbox::new();
         let (_dir, repo_path) = create_test_repo();
         let resolver = ShaResolver::new(&repo_path);
 
@@ -555,6 +607,7 @@ mod tests {
 
     #[test]
     fn test_is_initial_commit() {
+        let _env = EnvSandbox::new();
         let (_dir, repo_path) = create_test_repo();
         let resolver = ShaResolver::new(&repo_path);
 
@@ -567,6 +620,7 @@ mod tests {
 
     #[test]
     fn test_resolve_event_aware_default() {
+        let _env = EnvSandbox::new();
         let (_dir, repo_path) = create_test_repo();
 
         // Create second commit
@@ -597,6 +651,7 @@ mod tests {
 
     #[test]
     fn test_resolve_event_aware_explicit_shas() {
+        let _env = EnvSandbox::new();
         let (_dir, repo_path) = create_test_repo();
 
         // Create second commit
