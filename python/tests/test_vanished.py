@@ -1,5 +1,6 @@
 """Vanished-file detection (detect_vanished) through the Python bindings."""
 
+import json
 import subprocess
 
 import pytest
@@ -93,3 +94,26 @@ def test_vanished_off_by_default(vanished_repo):
     assert not result.any_vanished
     assert result.vanished_files == []
     assert all(d["action"] != "destroy" for d in result.deploy_decisions)
+
+
+def test_file_matrix_native_per_path(vanished_repo):
+    """Per-path `files` run emits a native file_matrix with the stack label
+    (glob affixes stripped) and a destroy/vanished entry — no jq needed."""
+    repo, base, add_sha, head = vanished_repo
+    detector = ChangeDetector(str(repo))
+    config = Config(
+        base_sha=base,
+        sha=head,
+        files=["stacks/**/Pulumi.yaml"],
+        detect_vanished=True,
+    )
+    result = detector.get_changed_files(config)
+
+    matrix = json.loads(result.file_matrix)["include"]
+    assert len(matrix) == 1
+    entry = matrix[0]
+    assert entry["stack"] == "gone"  # affixes stacks/ .../Pulumi.yaml stripped
+    assert entry["container"] == "stacks/gone/Pulumi.yaml"
+    assert entry["action"] == "destroy"
+    assert entry["reason"] == "vanished"
+    assert entry["last_seen_sha"] == add_sha

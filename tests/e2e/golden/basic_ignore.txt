@@ -1,6 +1,9 @@
 matrix<<LECHANGE_EOF_NORMALIZED
 {"include":[]}
 LECHANGE_EOF_NORMALIZED
+file_matrix<<LECHANGE_EOF_NORMALIZED
+{"include":[{"stack":"s1/Pulumi.yaml","container":"stacks/s1/Pulumi.yaml","action":"deploy","reason":"modified"},{"stack":"s2/Pulumi.yaml","container":"stacks/s2/Pulumi.yaml","action":"destroy","reason":"deleted","last_seen_sha":"GITSHA"}]}
+LECHANGE_EOF_NORMALIZED
 has_changes=true
 changed_files<<LECHANGE_EOF_NORMALIZED
 stacks/s1/Pulumi.yaml stacks/s2/Pulumi.yaml

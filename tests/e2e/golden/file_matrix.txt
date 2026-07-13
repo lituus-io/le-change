@@ -2,25 +2,25 @@ matrix<<LECHANGE_EOF_NORMALIZED
 {"include":[]}
 LECHANGE_EOF_NORMALIZED
 file_matrix<<LECHANGE_EOF_NORMALIZED
-{"include":[{"stack":"s1","container":"stacks/s1/Pulumi.yaml","action":"deploy","reason":"modified"},{"stack":"s2","container":"stacks/s2/Pulumi.yaml","action":"destroy","reason":"deleted","last_seen_sha":"GITSHA"},{"stack":"s3","container":"stacks/s3/Pulumi.yaml","action":"deploy","reason":"new_change"}]}
+{"include":[{"stack":"buckets/churn","container":"stacks/buckets/churn/Pulumi.yaml","action":"deploy","reason":"modified"},{"stack":"keep","container":"stacks/keep/Pulumi.yaml","action":"destroy","reason":"deleted","last_seen_sha":"GITSHA"},{"stack":"gone","container":"stacks/gone/Pulumi.yaml","action":"destroy","reason":"vanished","last_seen_sha":"GITSHA"}]}
 LECHANGE_EOF_NORMALIZED
 has_changes=true
 changed_files<<LECHANGE_EOF_NORMALIZED
-stacks/s1/Pulumi.yaml stacks/s2/Pulumi.yaml stacks/s3/Pulumi.yaml
+stacks/buckets/churn/Pulumi.yaml stacks/keep/Pulumi.yaml
 LECHANGE_EOF_NORMALIZED
-changed_files_count=3
+changed_files_count=2
 any_changed=true
 added_files<<LECHANGE_EOF_NORMALIZED
-stacks/s3/Pulumi.yaml
+
 LECHANGE_EOF_NORMALIZED
 modified_files<<LECHANGE_EOF_NORMALIZED
-stacks/s1/Pulumi.yaml
+stacks/buckets/churn/Pulumi.yaml
 LECHANGE_EOF_NORMALIZED
 deleted_files<<LECHANGE_EOF_NORMALIZED
-stacks/s2/Pulumi.yaml
+stacks/keep/Pulumi.yaml
 LECHANGE_EOF_NORMALIZED
 vanished_files<<LECHANGE_EOF_NORMALIZED
-
+stacks/gone/Pulumi.yaml
 LECHANGE_EOF_NORMALIZED
 files_to_rebuild<<LECHANGE_EOF_NORMALIZED
 
@@ -35,5 +35,5 @@ diagnostics<<LECHANGE_EOF_NORMALIZED
 []
 LECHANGE_EOF_NORMALIZED
 vanished<<LECHANGE_EOF_NORMALIZED
-[]
+[{"path":"stacks/gone/Pulumi.yaml","last_seen_sha":"GITSHA"}]
 LECHANGE_EOF_NORMALIZED
