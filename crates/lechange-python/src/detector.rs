@@ -79,10 +79,15 @@ impl PyChangeDetector {
                 core_config.deleted_to_destroy,
             );
 
-            Ok((processed, outputs, interner))
+            let files_pattern = core_config
+                .files
+                .as_ref()
+                .and_then(|v| v.first())
+                .map(|c| c.to_string());
+            Ok((processed, outputs, interner, files_pattern))
         })?;
 
-        let (processed, outputs, interner) = result;
+        let (processed, outputs, interner, files_pattern) = result;
         Ok(PyChangedFiles::from_core(
             processed,
             &outputs,
@@ -91,6 +96,7 @@ impl PyChangeDetector {
             use_posix,
             include_reason,
             include_concurrency,
+            files_pattern.as_deref(),
         ))
     }
 

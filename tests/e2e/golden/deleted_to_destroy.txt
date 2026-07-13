@@ -1,6 +1,9 @@
 matrix<<LECHANGE_EOF_NORMALIZED
 {"include":[{"stack":"old","files":"stacks/old/Pulumi.yaml","count":1,"action":"destroy","reason":"deleted","last_seen_sha":"GITSHA"}]}
 LECHANGE_EOF_NORMALIZED
+file_matrix<<LECHANGE_EOF_NORMALIZED
+{"include":[{"stack":"stacks/old/Pulumi.yaml","container":"stacks/old/Pulumi.yaml","action":"destroy","reason":"deleted","last_seen_sha":"GITSHA"}]}
+LECHANGE_EOF_NORMALIZED
 has_changes=true
 changed_files<<LECHANGE_EOF_NORMALIZED
 stacks/old/Pulumi.yaml

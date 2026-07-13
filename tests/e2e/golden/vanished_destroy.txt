@@ -1,6 +1,9 @@
 matrix<<LECHANGE_EOF_NORMALIZED
 {"include":[{"stack":"gone","files":"stacks/gone/Pulumi.yaml stacks/gone/schema.json","count":2,"action":"destroy","reason":"vanished","last_seen_sha":"GITSHA"}]}
 LECHANGE_EOF_NORMALIZED
+file_matrix<<LECHANGE_EOF_NORMALIZED
+{"include":[{"stack":"stacks/gone/Pulumi.yaml","container":"stacks/gone/Pulumi.yaml","action":"destroy","reason":"vanished","last_seen_sha":"GITSHA"},{"stack":"stacks/gone/schema.json","container":"stacks/gone/schema.json","action":"destroy","reason":"vanished","last_seen_sha":"GITSHA"}]}
+LECHANGE_EOF_NORMALIZED
 has_changes=true
 changed_files<<LECHANGE_EOF_NORMALIZED
 

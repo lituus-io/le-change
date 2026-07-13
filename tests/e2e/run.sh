@@ -125,6 +125,30 @@ HEAD=$(gitc "$R" rev-parse HEAD)
 run_scenario deleted_to_destroy "$R" "$BASE" "$HEAD" \
   --files-group-by 'stacks/{group}/**' --detect-vanished --deleted-to-destroy
 
+# ── fixture 6: native per-path file_matrix (add + modify + delete + vanish) ─
+# Exercises every file_matrix action/reason on a per-path (`--files`) run — the
+# shape the bilayer staging/serving workflows consume without jq. The stack
+# label is the Pulumi.yaml's parent dir (glob affixes stripped), including
+# nested paths that dir-subtree grouping cannot express.
+R=$WORK/filematrix; new_repo "$R"
+mkdir -p "$R/stacks/keep" "$R/stacks/buckets/churn"
+echo "name: keep" > "$R/stacks/keep/Pulumi.yaml"
+echo "name: churn" > "$R/stacks/buckets/churn/Pulumi.yaml"
+gitc "$R" add -A && gitc "$R" commit -qm base
+BASE=$(gitc "$R" rev-parse HEAD)
+mkdir -p "$R/stacks/gone"
+echo "name: gone" > "$R/stacks/gone/Pulumi.yaml"   # added...
+gitc "$R" add -A && gitc "$R" commit -qm add-gone
+echo "name: churn v2" > "$R/stacks/buckets/churn/Pulumi.yaml"  # modify nested
+gitc "$R" rm -rq stacks/gone                        # ...then removed (vanished)
+gitc "$R" rm -q stacks/keep/Pulumi.yaml             # endpoint delete
+gitc "$R" add -A && gitc "$R" commit -qm mutate
+HEAD=$(gitc "$R" rev-parse HEAD)
+
+# NOTE: last_seen_sha / base_sha are commit-dependent, normalized as GITSHA.
+run_scenario file_matrix "$R" "$BASE" "$HEAD" \
+  --files 'stacks/**/Pulumi.yaml' --detect-vanished
+
 if [ "$MODE" != "--update" ] && [ "$FAIL" -ne 0 ]; then
   echo "golden e2e FAILED"
   exit 1

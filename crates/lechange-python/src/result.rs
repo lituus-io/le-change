@@ -2,7 +2,9 @@
 
 use lechange_core::interner::StringInterner;
 use lechange_core::output::computed::ComputedOutputs;
-use lechange_core::output::json_format::format_deploy_matrix;
+use lechange_core::output::json_format::{
+    format_deploy_matrix, format_file_matrix, glob_literal_affixes,
+};
 use lechange_core::types::ProcessedResult;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
@@ -51,6 +53,9 @@ pub struct PyChangedFiles {
 
     // Vanished files (detect_vanished)
     vanished: Vec<(String, String)>,
+
+    // Per-path deploy matrix JSON (nesting-safe)
+    file_matrix: String,
 
     // Deploy decisions
     group_deploy_decisions: Vec<PyGroupDeployDecision>,
@@ -257,6 +262,11 @@ impl PyChangedFiles {
             list.append(dict)?;
         }
         Ok(list)
+    }
+
+    #[getter]
+    fn file_matrix(&self) -> &str {
+        &self.file_matrix
     }
 
     #[getter]
@@ -485,6 +495,7 @@ impl PyChangedFiles {
         use_posix_path_separator: bool,
         deploy_matrix_include_reason: bool,
         deploy_matrix_include_concurrency: bool,
+        files_pattern: Option<&str>,
     ) -> Self {
         // Helper to apply POSIX path conversion if configured
         let resolve_path = |s: &str| -> String {
@@ -675,6 +686,14 @@ impl PyChangedFiles {
             })
             .collect();
 
+        // Per-path deploy matrix (nesting-safe). Uses raw (non-POSIX-converted)
+        // paths so `container` matches the repo path exactly.
+        let (fm_prefix, fm_suffix) = files_pattern.map(glob_literal_affixes).unwrap_or(("", ""));
+        let base_sha_str = result.base_sha.and_then(|b| interner.resolve(b));
+        let file_matrix = format_file_matrix(&result, base_sha_str, fm_prefix, fm_suffix, |sid| {
+            interner.resolve(sid)
+        });
+
         Self {
             added_files,
             copied_files,
@@ -708,6 +727,7 @@ impl PyChangedFiles {
             rebuild_reasons,
             diagnostics,
             vanished,
+            file_matrix,
             group_deploy_decisions,
             deploy_matrix_json,
             _has_deployable_groups,

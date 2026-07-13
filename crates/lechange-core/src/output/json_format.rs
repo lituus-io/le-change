@@ -224,6 +224,132 @@ where
     buf
 }
 
+/// Derive the literal (prefix, suffix) of a single glob pattern: the run of
+/// literal characters before the first glob metacharacter (`* ? [ {`) and after
+/// the last one. Used to turn a matched path into a short deploy-unit label —
+/// e.g. `stacks/**/Pulumi.yaml` yields (`stacks/`, `/Pulumi.yaml`), so
+/// `stacks/buckets/churn/Pulumi.yaml` labels as `buckets/churn`.
+pub fn glob_literal_affixes(pattern: &str) -> (&str, &str) {
+    match pattern.find(['*', '?', '[', '{']) {
+        Some(first) => {
+            let last = pattern.rfind(['*', '?', '[', '{']).unwrap_or(first);
+            (&pattern[..first], &pattern[last + 1..])
+        }
+        None => (pattern, ""),
+    }
+}
+
+/// Build a per-PATH deploy matrix for GitHub Actions `strategy.matrix` — one
+/// entry per changed / vanished Pulumi-program file, regardless of directory
+/// nesting. Unlike [`format_deploy_matrix`] (which groups by directory subtree
+/// and mis-handles nested or parent+child stacks), this treats each matched
+/// file as its own deploy unit:
+///
+/// * added / modified filtered file -> `action: deploy`
+/// * deleted filtered file -> `action: destroy`, `reason: deleted`,
+///   `last_seen_sha` = `base_sha`
+/// * vanished file -> `action: destroy`, `reason: vanished`,
+///   `last_seen_sha` = its last-seen commit
+///
+/// Each entry is `{stack, container, action, reason[, last_seen_sha]}`, where
+/// `stack` is `container` with `strip_prefix`/`strip_suffix` removed (the
+/// literal affixes of the caller's file glob — see [`glob_literal_affixes`]).
+pub fn format_file_matrix<'a, F>(
+    result: &crate::types::ProcessedResult,
+    base_sha: Option<&str>,
+    strip_prefix: &str,
+    strip_suffix: &str,
+    resolve: F,
+) -> String
+where
+    F: Fn(crate::types::InternedString) -> Option<&'a str>,
+{
+    use crate::types::ChangeType;
+
+    let label = |path: &str| -> String {
+        path.strip_prefix(strip_prefix)
+            .unwrap_or(path)
+            .strip_suffix(strip_suffix)
+            .unwrap_or_else(|| path.strip_prefix(strip_prefix).unwrap_or(path))
+            .to_string()
+    };
+
+    let mut buf = String::with_capacity(256);
+    buf.push_str(r#"{"include":["#);
+    let mut first = true;
+
+    let entry = |buf: &mut String,
+                 first: &mut bool,
+                 container: &str,
+                 action: &str,
+                 reason: &str,
+                 last_seen: Option<&str>| {
+        if !*first {
+            buf.push(',');
+        }
+        *first = false;
+        buf.push_str(r#"{"stack":""#);
+        escape_json_into(&label(container), buf);
+        buf.push_str(r#"","container":""#);
+        escape_json_into(container, buf);
+        buf.push_str(r#"","action":""#);
+        buf.push_str(action);
+        buf.push_str(r#"","reason":""#);
+        buf.push_str(reason);
+        buf.push('"');
+        if let Some(sha) = last_seen {
+            buf.push_str(r#","last_seen_sha":""#);
+            escape_json_into(sha, buf);
+            buf.push('"');
+        }
+        buf.push('}');
+    };
+
+    // Changed files (respecting the pattern filter), classified by change type.
+    for &idx in &result.filtered_indices {
+        let file = &result.all_files[idx as usize];
+        let Some(container) = resolve(file.path) else {
+            continue;
+        };
+        match file.change_type {
+            ChangeType::Added => entry(
+                &mut buf,
+                &mut first,
+                container,
+                "deploy",
+                "new_change",
+                None,
+            ),
+            ChangeType::Modified => {
+                entry(&mut buf, &mut first, container, "deploy", "modified", None)
+            }
+            ChangeType::Deleted => entry(
+                &mut buf, &mut first, container, "destroy", "deleted", base_sha,
+            ),
+            // Renames/copies/typechanges are not deploy events for this model.
+            _ => {}
+        }
+    }
+
+    // Vanished files (added then removed within the range) -> destroy.
+    for v in &result.vanished_files {
+        let (Some(container), Some(sha)) = (resolve(v.path), resolve(v.last_seen_sha)) else {
+            continue;
+        };
+        entry(
+            &mut buf,
+            &mut first,
+            container,
+            "destroy",
+            "vanished",
+            Some(sha),
+        );
+    }
+
+    buf.push_str("]}");
+    buf
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -673,5 +799,108 @@ mod vanished_format_tests {
         assert_eq!(parsed[0]["last_seen_sha"], "aaaa");
         assert_eq!(parsed[1]["path"], r#"stacks/we "ird/x.yaml"#);
         assert_eq!(format_vanished_json(&[], |s| interner.resolve(s)), "[]");
+    }
+}
+
+#[cfg(test)]
+mod file_matrix_tests {
+    use super::*;
+    use crate::interner::StringInterner;
+    use crate::types::{ChangeType, ChangedFile, FileOrigin, ProcessedResult, VanishedFile};
+
+    fn file(interner: &StringInterner, path: &str, ct: ChangeType) -> ChangedFile {
+        ChangedFile {
+            path: interner.intern(path),
+            change_type: ct,
+            previous_path: None,
+            is_symlink: false,
+            submodule_depth: 0,
+            origin: FileOrigin {
+                in_current_changes: true,
+                in_previous_failure: false,
+                in_previous_success: false,
+            },
+        }
+    }
+
+    #[test]
+    fn test_glob_literal_affixes() {
+        assert_eq!(
+            glob_literal_affixes("stacks/**/Pulumi.yaml"),
+            ("stacks/", "/Pulumi.yaml")
+        );
+        assert_eq!(
+            glob_literal_affixes("stacks/*/x.yaml"),
+            ("stacks/", "/x.yaml")
+        );
+        assert_eq!(glob_literal_affixes("no/glob/here"), ("no/glob/here", ""));
+        assert_eq!(glob_literal_affixes("**"), ("", ""));
+    }
+
+    #[test]
+    fn test_file_matrix_all_change_types_and_nesting() {
+        let interner = StringInterner::new();
+        let mut result = ProcessedResult {
+            base_sha: Some(interner.intern("base9999")),
+            ..Default::default()
+        };
+        result.all_files = vec![
+            file(&interner, "stacks/flat/Pulumi.yaml", ChangeType::Added),
+            file(
+                &interner,
+                "stacks/buckets/churn/Pulumi.yaml",
+                ChangeType::Modified,
+            ),
+            file(&interner, "stacks/old/Pulumi.yaml", ChangeType::Deleted),
+            file(&interner, "stacks/renamed/Pulumi.yaml", ChangeType::Renamed),
+        ];
+        result.filtered_indices = vec![0, 1, 2, 3];
+        result.vanished_files = vec![VanishedFile {
+            path: interner.intern("stacks/gone/Pulumi.yaml"),
+            last_seen_sha: interner.intern("cafe1234"),
+        }];
+
+        let json = format_file_matrix(
+            &result,
+            interner.resolve(result.base_sha.unwrap()),
+            "stacks/",
+            "/Pulumi.yaml",
+            |s| interner.resolve(s),
+        );
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+        let inc = parsed["include"].as_array().unwrap();
+        // added, modified, deleted, vanished = 4 entries (rename excluded)
+        assert_eq!(inc.len(), 4);
+
+        assert_eq!(inc[0]["stack"], "flat");
+        assert_eq!(inc[0]["container"], "stacks/flat/Pulumi.yaml");
+        assert_eq!(inc[0]["action"], "deploy");
+        assert_eq!(inc[0]["reason"], "new_change");
+        assert!(inc[0].get("last_seen_sha").is_none());
+
+        // nested label strips the affixes
+        assert_eq!(inc[1]["stack"], "buckets/churn");
+        assert_eq!(inc[1]["action"], "deploy");
+        assert_eq!(inc[1]["reason"], "modified");
+
+        assert_eq!(inc[2]["stack"], "old");
+        assert_eq!(inc[2]["action"], "destroy");
+        assert_eq!(inc[2]["reason"], "deleted");
+        assert_eq!(inc[2]["last_seen_sha"], "base9999");
+
+        assert_eq!(inc[3]["stack"], "gone");
+        assert_eq!(inc[3]["action"], "destroy");
+        assert_eq!(inc[3]["reason"], "vanished");
+        assert_eq!(inc[3]["last_seen_sha"], "cafe1234");
+    }
+
+    #[test]
+    fn test_file_matrix_empty() {
+        let interner = StringInterner::new();
+        let result = ProcessedResult::default();
+        let json = format_file_matrix(&result, None, "stacks/", "/Pulumi.yaml", |s| {
+            interner.resolve(s)
+        });
+        assert_eq!(json, r#"{"include":[]}"#);
     }
 }

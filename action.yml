@@ -66,8 +66,11 @@ inputs:
 
 outputs:
   matrix:
-    description: 'Deploy matrix JSON — use with fromJson() in strategy.matrix'
+    description: 'Deploy matrix JSON (directory-grouped, files_group_by mode) — use with fromJson() in strategy.matrix'
     value: ${{ steps.detect.outputs.matrix }}
+  file_matrix:
+    description: 'Per-path deploy matrix JSON (one entry per changed/vanished Pulumi file; nesting-safe) — {include:[{stack,container,action,reason,last_seen_sha}]}'
+    value: ${{ steps.detect.outputs.file_matrix }}
   has_changes:
     description: 'true if any deployable changes detected'
     value: ${{ steps.detect.outputs.has_changes }}

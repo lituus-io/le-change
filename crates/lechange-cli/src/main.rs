@@ -324,6 +324,21 @@ fn run_detect(args: DetectArgs) -> i32 {
         include_concurrency,
     );
 
+    // Per-path deploy matrix (one entry per changed/vanished file, nesting-safe).
+    // The stack label strips the literal affixes of the first `files` glob.
+    let base_sha_str = processed.base_sha.and_then(|s| interner.resolve(s));
+    let (strip_prefix, strip_suffix) = clean_vec(&args.files)
+        .and_then(|v| v.first().copied())
+        .map(lechange_core::output::json_format::glob_literal_affixes)
+        .unwrap_or(("", ""));
+    let file_matrix = lechange_core::output::json_format::format_file_matrix(
+        &processed,
+        base_sha_str,
+        strip_prefix,
+        strip_suffix,
+        resolve,
+    );
+
     let has_changes = !all_changed.is_empty()
         || outputs.has_deployable_groups()
         || outputs.has_destroyable_groups();
@@ -389,6 +404,7 @@ fn run_detect(args: DetectArgs) -> i32 {
 
     let out = DetectOutput {
         deploy_matrix: &deploy_matrix,
+        file_matrix: &file_matrix,
         has_changes,
         all_changed: &all_changed,
         added: &added,
@@ -425,6 +441,7 @@ fn run_detect(args: DetectArgs) -> i32 {
 /// Bundled output data passed to format writers.
 struct DetectOutput<'a> {
     deploy_matrix: &'a str,
+    file_matrix: &'a str,
     has_changes: bool,
     all_changed: &'a [&'a str],
     added: &'a [&'a str],
@@ -465,6 +482,9 @@ fn write_gha_output(out: &DetectOutput) -> std::io::Result<()> {
 
     writeln!(f, "matrix<<{delim}")?;
     writeln!(f, "{}", safe_output_escape(out.deploy_matrix))?;
+    writeln!(f, "{delim}")?;
+    writeln!(f, "file_matrix<<{delim}")?;
+    writeln!(f, "{}", safe_output_escape(out.file_matrix))?;
     writeln!(f, "{delim}")?;
     writeln!(f, "has_changes={}", out.has_changes)?;
 
@@ -541,6 +561,8 @@ fn write_json_output(out: &DetectOutput) -> std::io::Result<()> {
 
     let output = serde_json::json!({
         "matrix": matrix_val,
+        "file_matrix": serde_json::from_str::<serde_json::Value>(out.file_matrix)
+            .unwrap_or(serde_json::json!({"include":[]})),
         "has_changes": out.has_changes,
         "changed_files": out.all_changed,
         "changed_files_count": out.all_changed.len(),
