@@ -149,6 +149,27 @@ HEAD=$(gitc "$R" rev-parse HEAD)
 run_scenario file_matrix "$R" "$BASE" "$HEAD" \
   --files 'stacks/**/Pulumi.yaml' --detect-vanished
 
+# ── fixture 7: deterministic vanish — add-then-remove with a near-identical add
+# The removed path (stacks/old) and the added path (stacks/new) share almost all
+# of their Pulumi.yaml. Detection is path-based, NOT content-similarity: the old
+# path MUST still vanish (destroy) even though a lookalike was added elsewhere in
+# the same range. Guards against rename/find_similar masking regressing.
+R=$WORK/detvanish; new_repo "$R"
+echo "readme" > "$R/README.md"
+gitc "$R" add -A && gitc "$R" commit -qm base
+BASE=$(gitc "$R" rev-parse HEAD)
+mkdir -p "$R/stacks/old"
+printf 'name: old\nruntime: yaml\nresources:\n  ds: {type: bq}\n' > "$R/stacks/old/Pulumi.yaml"
+gitc "$R" add -A && gitc "$R" commit -qm add-old
+gitc "$R" rm -rq stacks/old                          # removed...
+mkdir -p "$R/stacks/new"
+printf 'name: new\nruntime: yaml\nresources:\n  ds: {type: bq}\n' > "$R/stacks/new/Pulumi.yaml"  # ...near-identical add
+gitc "$R" add -A && gitc "$R" commit -qm "rm old + add near-identical new"
+HEAD=$(gitc "$R" rev-parse HEAD)
+
+run_scenario deterministic_vanish "$R" "$BASE" "$HEAD" \
+  --files 'stacks/**/Pulumi.yaml' --detect-vanished
+
 if [ "$MODE" != "--update" ] && [ "$FAIL" -ne 0 ]; then
   echo "golden e2e FAILED"
   exit 1

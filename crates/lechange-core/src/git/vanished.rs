@@ -12,13 +12,22 @@
 //! added and deleted entirely within a merged side branch) is invisible by
 //! design: it never existed on the mainline.
 //!
+//! Determinism guarantee: detection is purely path-based. Renames are NOT
+//! detected — `git mv a b` is a delete of `a` plus an add of `b`, and each path
+//! is judged on its own exact repo-relative string. There is no content-
+//! similarity heuristic, so the result depends only on which paths were added
+//! and removed, never on how alike two files happen to be. This is essential
+//! for path-keyed deployment: a stack whose file is gone at head must have its
+//! path's state destroyed even if a lookalike stack was added elsewhere in the
+//! same range.
+//!
 //! Concurrency: the walk is single-threaded by necessity — `git2::Repository`,
 //! `Tree`, and `Diff` are `!Send`, and after pathspec filtering the per-commit
 //! delta sets are tiny (usually empty), so shipping paths across a rayon
 //! boundary would cost more than the glob checks it saves. The feature is
 //! zero-cost when disabled: one bool branch in the pipeline.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::Path;
 
 use crate::error::{Error, Result};
@@ -40,19 +49,21 @@ pub struct VanishedScan {
     pub anomalies: Vec<String>,
 }
 
-/// Terminal event observed for a path while walking newest -> oldest
-enum Terminal {
-    /// Deleted; payload = first parent of the deleting commit (last commit
-    /// where the file existed)
-    DeletedAt(git2::Oid),
-    /// Renamed away to another path
-    RenamedTo(InternedString),
-}
-
-/// Per-path event record (newest event wins — the walk is newest-first)
+/// Per-path event record (newest event wins — the walk is newest-first).
+///
+/// Detection is deterministic and purely path-based: a path is tracked by its
+/// exact repo-relative string, never by content similarity. Renames are
+/// intentionally NOT detected — `git mv a b` is seen as a delete of `a` plus an
+/// add of `b`, and each path is judged on its own. For a path-keyed deployment
+/// (each stack's state lives at a fixed backend path), a file absent at head but
+/// present intra-range must have its path destroyed regardless of whether some
+/// other path gained similar content; content-similarity rename pairing would
+/// wrongly suppress that destroy — the exact bug this design avoids.
 struct PathEvents {
     added_in_range: bool,
-    terminal: Option<Terminal>,
+    /// First parent of the deleting commit (the last commit where the file
+    /// existed); set on the newest deletion observed for this path.
+    deleted_at: Option<git2::Oid>,
 }
 
 /// First-parent history walker detecting files added then removed within
@@ -141,117 +152,73 @@ impl<'a> VanishedDetector<'a> {
                 None => None,
             };
 
-            // Cheap pass: pathspec-filtered. Commits touching nothing under
-            // the prefixes produce an empty delta set for near-zero cost.
+            // Single pathspec-filtered diff against the first parent. Rename
+            // detection is intentionally OFF (no `find_similar`): `git mv a b`
+            // yields Delete(a) + Add(b), and each path is judged on its own.
+            // Determinism over guessing — content-similarity rename pairing would
+            // suppress the destroy of a path whose file merely moved, or whose
+            // lookalike was added elsewhere, which is wrong for path-keyed state.
+            // Commits touching nothing under the prefixes produce an empty delta
+            // set for near-zero cost.
             let mut opts = git2::DiffOptions::new();
             opts.ignore_submodules(true);
             for p in pathspecs {
                 opts.pathspec(p);
             }
-            let cheap =
+            let diff =
                 repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit_tree), Some(&mut opts))?;
 
-            let needs_precise = cheap.deltas().any(|d| {
-                d.status() == git2::Delta::Deleted
-                    && d.old_file()
-                        .path()
-                        .and_then(|p| p.to_str())
-                        .is_some_and(&matches)
-            });
-
-            // Precise pass only when a matching deletion appeared: re-diff
-            // WITHOUT pathspec and with rename detection, so a delete that is
-            // actually a rename (possibly out of the prefixes) is classified
-            // Renamed — pathspec filtering would have hidden the Add side.
-            // Static dispatch: one closure applied to whichever diff is live.
             let parent_oid = parent.as_ref().map(|p| p.id());
-            let mut record = |delta: git2::DiffDelta<'_>| {
+            for delta in diff.deltas() {
                 match delta.status() {
                     git2::Delta::Deleted => {
                         let Some(path) = delta.old_file().path().and_then(|p| p.to_str()) else {
-                            return;
+                            continue;
                         };
                         if !matches(path) {
-                            return;
+                            continue;
                         }
                         let key = self.interner.intern(path);
                         let entry = events.entry(key).or_insert(PathEvents {
                             added_in_range: false,
-                            terminal: None,
+                            deleted_at: None,
                         });
-                        if entry.terminal.is_none() {
+                        // Newest deletion wins (walk is newest-first). A deletion
+                        // in a root commit is impossible (nothing existed before
+                        // it), so parent_oid is always Some here.
+                        if entry.deleted_at.is_none() {
                             if let Some(parent_oid) = parent_oid {
-                                entry.terminal = Some(Terminal::DeletedAt(parent_oid));
+                                entry.deleted_at = Some(parent_oid);
                                 deletion_order.insert(key, scan.commits_walked);
                             }
-                            // A deletion in a root commit is impossible
-                            // (nothing existed before it) — ignore.
-                        }
-                    }
-                    git2::Delta::Renamed => {
-                        let (Some(old), Some(new)) = (
-                            delta.old_file().path().and_then(|p| p.to_str()),
-                            delta.new_file().path().and_then(|p| p.to_str()),
-                        ) else {
-                            return;
-                        };
-                        if !matches(old) {
-                            return;
-                        }
-                        let key = self.interner.intern(old);
-                        let entry = events.entry(key).or_insert(PathEvents {
-                            added_in_range: false,
-                            terminal: None,
-                        });
-                        if entry.terminal.is_none() {
-                            entry.terminal = Some(Terminal::RenamedTo(self.interner.intern(new)));
                         }
                     }
                     git2::Delta::Added => {
                         let Some(path) = delta.new_file().path().and_then(|p| p.to_str()) else {
-                            return;
+                            continue;
                         };
                         if !matches(path) {
-                            return;
+                            continue;
                         }
                         let key = self.interner.intern(path);
                         events
                             .entry(key)
                             .or_insert(PathEvents {
                                 added_in_range: false,
-                                terminal: None,
+                                deleted_at: None,
                             })
                             .added_in_range = true;
                     }
                     _ => {}
                 }
-            };
-
-            if needs_precise {
-                let mut full_opts = git2::DiffOptions::new();
-                full_opts.ignore_submodules(true);
-                let mut diff = repo.diff_tree_to_tree(
-                    parent_tree.as_ref(),
-                    Some(&commit_tree),
-                    Some(&mut full_opts),
-                )?;
-                let mut find = git2::DiffFindOptions::new();
-                find.renames(true);
-                diff.find_similar(Some(&mut find))?;
-                for delta in diff.deltas() {
-                    record(delta);
-                }
-            } else {
-                for delta in cheap.deltas() {
-                    record(delta);
-                }
             }
         }
 
-        // Resolution: a path is vanished when it was added in-range, is absent
-        // from the head tree, did not exist at base (the endpoint diff already
-        // reports those as Deleted), and its newest terminal event — following
-        // rename chains — is a deletion.
+        // Resolution: a path vanished when it was added in-range, is absent from
+        // the head tree, did not exist at base (the endpoint diff already reports
+        // base-existing deletions), and a deletion was observed for it on the
+        // first-parent chain. Every path stands on its own — no rename chains, no
+        // content similarity, no guessing.
         for (&path, ev) in &events {
             if !ev.added_in_range {
                 continue;
@@ -268,43 +235,17 @@ impl<'a> VanishedDetector<'a> {
                 }
             }
 
-            let mut cur = path;
-            let mut seen: HashSet<InternedString> = HashSet::from([path]);
-            loop {
-                match events.get(&cur).and_then(|e| e.terminal.as_ref()) {
-                    Some(Terminal::DeletedAt(parent_oid)) => {
-                        scan.vanished.push(VanishedFile {
-                            path: cur,
-                            last_seen_sha: self.interner.intern(&parent_oid.to_string()),
-                        });
-                        break;
-                    }
-                    Some(Terminal::RenamedTo(new_path)) => {
-                        let Some(new_str) = self.interner.resolve(*new_path) else {
-                            break;
-                        };
-                        if head_tree.get_path(Path::new(new_str)).is_ok() {
-                            break; // renamed and alive at head -> not vanished
-                        }
-                        if !seen.insert(*new_path) {
-                            scan.anomalies.push(format!(
-                                "rename cycle detected while resolving '{}'",
-                                path_str
-                            ));
-                            break;
-                        }
-                        cur = *new_path;
-                    }
-                    None => {
-                        scan.anomalies.push(format!(
-                            "'{}' was added in range and is absent at head, but no \
-                             deletion was observed on the first-parent chain within \
-                             the walked window",
-                            path_str
-                        ));
-                        break;
-                    }
-                }
+            match ev.deleted_at {
+                Some(parent_oid) => scan.vanished.push(VanishedFile {
+                    path,
+                    last_seen_sha: self.interner.intern(&parent_oid.to_string()),
+                }),
+                None => scan.anomalies.push(format!(
+                    "'{}' was added in range and is absent at head, but no \
+                     deletion was observed on the first-parent chain within \
+                     the walked window",
+                    path_str
+                )),
             }
         }
 
@@ -483,10 +424,14 @@ mod tests {
     }
 
     #[test]
-    fn test_rename_within_scope_not_vanished() {
+    fn test_rename_within_scope_vanishes_old_path() {
+        // Path-exact & deterministic: `git mv a b` = delete of a + add of b.
+        // a was added in range and is gone at head -> a vanishes (its path's
+        // deployed state must be destroyed). b is alive at head -> deployed, not
+        // vanished. Content similarity between a and b is irrelevant.
         let dir = new_repo();
         let base = write_and_commit(dir.path(), &[("README.md", "r")], "base");
-        write_and_commit(
+        let add = write_and_commit(
             dir.path(),
             &[("stacks/a/Pulumi.yaml", "same-content")],
             "add",
@@ -497,17 +442,20 @@ mod tests {
 
         let interner = StringInterner::new();
         let scan = detect(dir.path(), &interner, &base, &head, 0);
-        assert!(
-            scan.vanished.is_empty(),
-            "renamed-and-alive must not vanish"
-        );
+        let got = resolve(&interner, &scan);
+        // last_seen for a = parent of the rename commit = the add commit.
+        assert_eq!(got, vec![("stacks/a/Pulumi.yaml", add)]);
     }
 
     #[test]
-    fn test_rename_chain_then_delete() {
+    fn test_rename_chain_then_delete_vanishes_every_path() {
+        // add a -> rename a->b -> delete b. Both stacks/a and stacks/b held a
+        // matching file that is gone at head, and both were added in range, so
+        // both paths vanish (each may have deployed state to destroy). Ordered
+        // newest-deletion-first: b (deleted last) before a.
         let dir = new_repo();
         let base = write_and_commit(dir.path(), &[("README.md", "r")], "base");
-        write_and_commit(
+        let add = write_and_commit(
             dir.path(),
             &[("stacks/a/Pulumi.yaml", "same-content")],
             "add",
@@ -520,15 +468,23 @@ mod tests {
         let interner = StringInterner::new();
         let scan = detect(dir.path(), &interner, &base, &head, 0);
         let got = resolve(&interner, &scan);
-        // vanishes under its FINAL name, reconstructable at the rename commit
-        assert_eq!(got, vec![("stacks/b/Pulumi.yaml", renamed)]);
+        assert_eq!(
+            got,
+            vec![
+                ("stacks/b/Pulumi.yaml", renamed),
+                ("stacks/a/Pulumi.yaml", add),
+            ]
+        );
     }
 
     #[test]
-    fn test_rename_out_of_scope_not_vanished() {
+    fn test_move_out_of_scope_vanishes_old_path() {
+        // Moving the file out of the glob scope removes it from its deploy path;
+        // path-exact treats that as a deletion of stacks/a (destroy its state).
+        // The out-of-scope add (archive/) does not match and is ignored.
         let dir = new_repo();
         let base = write_and_commit(dir.path(), &[("README.md", "r")], "base");
-        write_and_commit(
+        let add = write_and_commit(
             dir.path(),
             &[("stacks/a/Pulumi.yaml", "same-content")],
             "add",
@@ -543,10 +499,8 @@ mod tests {
 
         let interner = StringInterner::new();
         let scan = detect(dir.path(), &interner, &base, &head, 0);
-        assert!(
-            scan.vanished.is_empty(),
-            "rename out of the glob scope is a rename, not a deletion"
-        );
+        let got = resolve(&interner, &scan);
+        assert_eq!(got, vec![("stacks/a/Pulumi.yaml", add)]);
     }
 
     #[test]
