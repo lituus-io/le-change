@@ -3,6 +3,8 @@
 [![CI](https://github.com/lituus-io/le-change/actions/workflows/ci.yml/badge.svg)](https://github.com/lituus-io/le-change/actions/workflows/ci.yml)
 [![Security](https://github.com/lituus-io/le-change/actions/workflows/security.yml/badge.svg)](https://github.com/lituus-io/le-change/actions/workflows/security.yml)
 [![Fuzz Testing](https://github.com/lituus-io/le-change/actions/workflows/fuzz.yml/badge.svg)](https://github.com/lituus-io/le-change/actions/workflows/fuzz.yml)
+[![crates.io](https://img.shields.io/crates/v/le-change.svg)](https://crates.io/crates/le-change)
+[![PyPI](https://img.shields.io/pypi/v/lechange.svg)](https://pypi.org/project/lechange/)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
 Fast Git change detection with deploy matrix generation.
