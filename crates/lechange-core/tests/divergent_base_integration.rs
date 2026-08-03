@@ -79,7 +79,11 @@ fn divergent_fixture() -> (TempDir, String, String, String) {
     (dir, fork, base_tip, head)
 }
 
-fn run(dir: &Path, interner: &StringInterner, config: &InputConfig<'_>) -> lechange_core::types::ProcessedResult {
+fn run(
+    dir: &Path,
+    interner: &StringInterner,
+    config: &InputConfig<'_>,
+) -> lechange_core::types::ProcessedResult {
     let repo = GitRepository::discover(dir).unwrap();
     let processor = FileProcessor::new(&repo, interner, config);
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -134,10 +138,16 @@ fn test_divergent_base_emits_diagnostic() {
         .iter()
         .find(|d| d.category == DiagnosticCategory::DivergentBase)
         .expect("divergent base must surface a diagnostic, not be silent");
-    assert!(diag.message.contains(&fork), "diagnostic names the merge base");
+    assert!(
+        diag.message.contains(&fork),
+        "diagnostic names the merge base"
+    );
 
     // The normalized base is what downstream consumers see (last_seen_sha).
-    assert_eq!(interner.resolve(result.base_sha.unwrap()), Some(fork.as_str()));
+    assert_eq!(
+        interner.resolve(result.base_sha.unwrap()),
+        Some(fork.as_str())
+    );
 }
 
 #[test]
@@ -161,7 +171,10 @@ fn test_ancestor_base_is_exact_noop() {
             .any(|d| d.category == DiagnosticCategory::DivergentBase),
         "no diagnostic on the common path"
     );
-    assert_eq!(interner.resolve(result.base_sha.unwrap()), Some(fork.as_str()));
+    assert_eq!(
+        interner.resolve(result.base_sha.unwrap()),
+        Some(fork.as_str())
+    );
 }
 
 #[test]
