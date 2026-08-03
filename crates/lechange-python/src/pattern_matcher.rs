@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! Python bindings for PatternMatcher
 
 use lechange_core::patterns::matcher::PatternMatcher;

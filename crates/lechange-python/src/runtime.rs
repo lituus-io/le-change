@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! Tokio runtime management for Python bindings
 
 use once_cell::sync::OnceCell;

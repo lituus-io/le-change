@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! String interner for zero-copy path deduplication
 //!
 //! Uses a `Box<str>` arena for single-allocation storage with a hash-keyed map

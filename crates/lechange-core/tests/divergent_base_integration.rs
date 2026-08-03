@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! Regression tests for a divergent / stale base SHA.
 //!
 //! `github.event.pull_request.base.sha` is the base BRANCH TIP at event time,

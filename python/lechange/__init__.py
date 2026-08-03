@@ -1,3 +1,4 @@
+# Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 """
 LeChange - Ultra-fast Git change detection powered by Rust.
 

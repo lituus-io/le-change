@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! File output writer for writing results to files
 
 use crate::error::Result;

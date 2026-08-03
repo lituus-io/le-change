@@ -1,3 +1,4 @@
+# Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 """Tests for format utility functions."""
 
 from lechange import escape_json, safe_output_escape, format_json_array, format_matrix

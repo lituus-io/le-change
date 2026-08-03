@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! Property-based tests using proptest
 
 use lechange_core::{ChangeType, StringInterner};

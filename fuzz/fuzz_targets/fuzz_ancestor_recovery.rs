@@ -1,4 +1,5 @@
 #![no_main]
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 use lechange_core::patterns::matcher::PatternMatcher;
 use libfuzzer_sys::fuzz_target;
 

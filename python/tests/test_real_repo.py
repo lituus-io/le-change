@@ -1,3 +1,4 @@
+# Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 """Tests using the real le-change-test repo."""
 
 import pytest

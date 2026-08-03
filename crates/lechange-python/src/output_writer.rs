@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! Python bindings for OutputWriter
 
 use lechange_core::output::writer::OutputWriter;

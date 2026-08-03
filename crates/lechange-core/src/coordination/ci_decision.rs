@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! CI rebuild/skip decision engine
 //!
 //! Computes intelligent rebuild and skip decisions based on workflow history.

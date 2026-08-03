@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! Full-pipeline integration tests for vanished-file detection.
 
 use std::fs;

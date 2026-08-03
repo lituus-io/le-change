@@ -1,3 +1,4 @@
+# Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 """
 Test suite for LeChange Python bindings.
 

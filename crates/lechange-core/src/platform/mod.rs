@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! Platform-specific utilities
 
 use std::path::MAIN_SEPARATOR;

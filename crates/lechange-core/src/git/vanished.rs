@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! Vanished-file detection: first-parent history walk over base..head.
 //!
 //! The endpoint diff (`diff_tree_to_tree(base, head)`) cannot see a file that

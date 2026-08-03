@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! Error handling for Python bindings
 
 use pyo3::exceptions::PyException;

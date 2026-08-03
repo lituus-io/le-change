@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! SHA resolution with complex fallback chains for GitHub Actions
 
 use crate::error::{Error, Result};

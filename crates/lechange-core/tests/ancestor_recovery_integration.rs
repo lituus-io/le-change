@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! Integration tests for ancestor directory file association (files_ancestor_lookup_depth)
 
 use lechange_core::interner::StringInterner;

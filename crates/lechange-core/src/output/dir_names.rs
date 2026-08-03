@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! Directory name extraction from file paths
 
 use crate::interner::StringInterner;

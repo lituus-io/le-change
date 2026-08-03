@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! Result type conversions — accepts ProcessedResult + ComputedOutputs
 
 use lechange_core::interner::StringInterner;

@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! Submodule handling with recursive diff support
 
 use crate::error::Result;

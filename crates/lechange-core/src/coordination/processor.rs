@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! Main file processing coordinator
 
 use crate::coordination::ci_decision::CiDecisionEngine;

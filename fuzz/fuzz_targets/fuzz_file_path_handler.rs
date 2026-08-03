@@ -1,4 +1,5 @@
 #![no_main]
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 use lechange_core::output::json_format::{escape_json_value, safe_output_escape};
 use lechange_core::platform::PathUtil;
 use libfuzzer_sys::fuzz_target;

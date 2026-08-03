@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! Git repository operations with async support
 
 use std::path::{Path, PathBuf};

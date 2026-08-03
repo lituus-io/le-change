@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! JSON/matrix/escape formatting utilities
 
 /// Escape a string for JSON output

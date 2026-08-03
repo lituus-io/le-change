@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! GitHub REST API client for pull request file fetching
 
 use crate::error::{Error, Result};

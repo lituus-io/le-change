@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! Integration tests for files_group_by template discovery and enriched deploy matrix
 
 use lechange_core::interner::StringInterner;

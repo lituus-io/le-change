@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! Workflow failure tracking and coordination logic
 
 use crate::coordination::extract_owner_repo;

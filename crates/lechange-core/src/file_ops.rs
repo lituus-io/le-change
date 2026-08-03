@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! File operations with symlink detection and caching
 
 use crate::error::{Error, Result};

@@ -1,3 +1,4 @@
+# Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 """Tests for workflow tracking API integration.
 
 All tests require GITHUB_TOKEN and network access.

@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! Integration tests for the LeChange processing pipeline
 
 use lechange_core::interner::StringInterner;

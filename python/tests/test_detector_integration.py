@@ -1,3 +1,4 @@
+# Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 """Integration tests for ChangeDetector with real git repos."""
 
 import subprocess

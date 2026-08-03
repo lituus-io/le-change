@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! # LeChange Core
 //!
 //! Ultra-fast Git change detection library with zero-cost abstractions.

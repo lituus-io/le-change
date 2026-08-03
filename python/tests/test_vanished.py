@@ -1,3 +1,4 @@
+# Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 """Vanished-file detection (detect_vanished) through the Python bindings."""
 
 import json

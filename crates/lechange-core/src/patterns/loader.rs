@@ -1,3 +1,4 @@
+// Copyright (c) 2024-2026 Lituus-io. All rights reserved.
 //! Unified pattern loading from source files and YAML
 
 use crate::error::{Error, Result};
