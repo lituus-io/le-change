@@ -422,6 +422,8 @@ pub enum DiagnosticCategory {
     AncestorRecovery,
     /// Vanished-file detection (history walk)
     VanishedDetection,
+    /// Base SHA is not an ancestor of head; diff normalized to the merge base
+    DivergentBase,
 }
 
 impl DiagnosticCategory {
@@ -437,6 +439,7 @@ impl DiagnosticCategory {
             Self::WorkflowApi => "workflow_api",
             Self::AncestorRecovery => "ancestor_recovery",
             Self::VanishedDetection => "vanished_detection",
+            Self::DivergentBase => "divergent_base",
         }
     }
 }

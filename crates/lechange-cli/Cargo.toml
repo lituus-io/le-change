@@ -1,6 +1,6 @@
 [package]
 name = "lechange-cli"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 authors = ["terekete <spicyzhug@gmail.com>"]
 description = "Ultraperformant change detection CLI for GitHub Actions"

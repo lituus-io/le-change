@@ -877,7 +877,7 @@ dependencies = [
 
 [[package]]
 name = "le-change"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "assert_matches",
  "chrono",
@@ -898,7 +898,7 @@ dependencies = [
 
 [[package]]
 name = "lechange-cli"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "clap",
  "le-change",
@@ -909,7 +909,7 @@ dependencies = [
 
 [[package]]
 name = "lechange-python"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "le-change",
  "once_cell",

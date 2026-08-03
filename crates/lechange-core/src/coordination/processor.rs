@@ -50,6 +50,37 @@ impl<'a> FileProcessor<'a> {
         let repo_path = self.git_ops.path();
         let sha_resolver = ShaResolver::new(repo_path);
         let (base_sha, head_sha) = sha_resolver.resolve_event_aware(self.config)?;
+
+        // Step 2a: Normalize a divergent base to the merge base (three-dot
+        // semantics). GitHub's `pull_request.base.sha` is the base BRANCH TIP at
+        // event time, not the PR's fork point: anything landed on the base branch
+        // after the branch was cut exists at base but not at head, and a two-dot
+        // tree diff reports it as Deleted -> destroy. Comparing against the fork
+        // point is what callers universally mean.
+        //
+        // merge_base(base, head) == base whenever base IS an ancestor, so this is
+        // an exact no-op on the common path and needs no separate ancestry probe.
+        // On Err (initial commit, shallow clone, unreachable object after a force
+        // push) the caller's base is kept unchanged.
+        //
+        // This also aligns the endpoint diff with the vanished walk, which is
+        // already merge-base-relative (it hides base and all its ancestors).
+        let base_sha = match sha_resolver.merge_base(&base_sha, &head_sha) {
+            Ok(merge_base) if merge_base != base_sha => {
+                result.diagnostics.push(Diagnostic {
+                    severity: DiagnosticSeverity::Warning,
+                    category: DiagnosticCategory::DivergentBase,
+                    message: format!(
+                        "base {} is not an ancestor of head {}; diffing against \
+                         merge base {} (three-dot semantics)",
+                        base_sha, head_sha, merge_base
+                    ),
+                });
+                merge_base
+            }
+            _ => base_sha,
+        };
+
         result.base_sha = Some(self.interner.intern(&base_sha));
         result.head_sha = Some(self.interner.intern(&head_sha));
 
